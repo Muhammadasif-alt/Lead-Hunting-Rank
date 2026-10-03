@@ -1,0 +1,12 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Packages allowed to run install scripts (pnpm blocks them by default).
+allowBuilds:
+  "@prisma/engines": true
+  prisma: true
+  "@nestjs/core": false
+  msgpackr-extract: false
+  sharp: false
+  unrs-resolver: false

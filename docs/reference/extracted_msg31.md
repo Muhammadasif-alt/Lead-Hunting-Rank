@@ -1,0 +1,1 @@
+bawna k do kuch miss ni krna mna langaugge knsi theek rhy gi Next.js yh Nest.js  k 7 Node knsa la chlna chia yh bs ak company k use k lya hai js m 4 se 5 person hon bs baki tm batao m us trha la k chlao ga

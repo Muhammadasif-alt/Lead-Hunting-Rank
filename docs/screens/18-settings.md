@@ -1,0 +1,100 @@
+# Screen #18 — Settings + System Administration
+
+## Core principle
+Settings predictable honi chahiye. Business user ko infrastructure complexity na dikhayen, admin ko operate/diagnose/recover/configure controls milen. (#17 AI authority, #15 integrations, #16 permissions separate.)
+
+## Structure
+[General] [Sales Configuration] [Data & Fields] [Notifications] [Security] [Data Governance] [System Health] [Jobs & Queues] [Import / Export] [Developer] [Audit]
+
+## 1. General Workspace Settings
+Workspace Name, Company Name, Default Country, Currency, Language, Timezone, Date Format, Week Starts.
+
+## 2. Business Identity
+Operational identity: business name, legal name, domain, address, phone, support/sales email, website. (Knowledge Base mein wahi jo AI claim karega.)
+
+## 3. Regional Configuration
+Country/state/currency/timezone/locale. Outbound timing prospect's location timezone.
+
+## 4. Currency Settings
+Base + display currency. Opportunity CAD → reporting USD equivalent with preserved exchange rate/date.
+
+## 5. Business Hours
+Company/Sales/Meeting/Outbound hours separate.
+
+## 6-15. Sales Configuration
+Pipeline, Opportunity Types, Qualification, Lead Lifecycle, Lost Reasons, Disqualification, Meeting Types, Task Types, Source Taxonomy (original/latest separate).
+
+## 16. Pipeline & Stage Semantics
+Stage type OPEN/CLOSED, requires qualification fields, impact check: 127 opportunities, 14 automations, 6 reports, 3 experiments reference it → migration required, no destructive instant change.
+
+## 17. Qualification Framework
+Need/Authority/Timeline/Budget/Current Solution/Decision Process/Requirements + custom. Types: text/number/currency/date/yes-no/select/multi-select/person/company/URL. Required vs recommended gates per stage.
+
+## 18. Lost/Disqualification Reasons
+Confirmed-by-prospect vs AI inferred possible reason. Disqualification separate: outside territory/wrong industry/closed/too small/unsupported/duplicate/invalid.
+
+## 19-20. Meeting Types + Task Types
+Discovery/Technical/Consultation/Proposal Review/Closing/Onboarding with duration, required qualification, eligible team, buffer, calendar, video provider, AI booking allowed. Tasks: call/FU/research/proposal/technical review/pricing review/meeting prep/internal.
+
+## 21-26. Custom Fields
+Per object (company/person/opportunity/meeting). Builder: name, object, type, required, AI accessible, campaign filters, analytics. AI READ/WRITE/OUTREACH USE per field. Internal risk field blocked for prospect-facing. Validation + avoid garbage; avoid too many required fields; progressive enrichment.
+
+## 27-28. Tags vs Structured Fields
+Tags lightweight. Don't replace Meeting/Opportunity entities with tags.
+
+## 29-30. Notification Defaults + Routing
+CRITICAL IMMEDIATE / custom pricing immediate / high intent in-app / meeting prep reminder / routine AI no notification / daily brief. Route: event→severity→owner→preference→channel. Quiet hours 10PM-7AM except critical.
+
+## 31-35. Security Settings
+Auth, MFA policy per role, sessions/timeout/remember device/concurrent, login activity, API access least privilege, security events.
+
+## 36-41. Data Governance
+Retention per class (raw provider payload, conversation, audit, AI intermediate output, website snapshot, meeting transcript, system logs). Delete workflow: controlled, dependencies shown. Suppression preservation — deleted person must not be rediscovered+cold-emailed again.
+
+## 42-43. Export + Export Security
+Background export jobs, permission check, re-auth if required, audit, temporary file, expiration.
+
+## 44-46. Backup + Backup≠Same Server Copy + Restore Readiness
+Database backups healthy/last. Backup must have separate storage/failure domain. Last restore test displayed.
+
+## 47-50. System Health
+Web/API/Worker/PostgreSQL/Redis/Jobs/Storage/AI/Email/Calendar indicators. Worker: queue latency, failed jobs, oldest pending, throughput. DB: connection/storage/backup/slow queries. Redis: connection/memory/queue connectivity.
+
+## 51-61. Queue/Jobs + Scheduler
+Job families with waiting/active/completed/failed/delayed + oldest waiting. Priorities CRITICAL/HIGH/NORMAL/BACKGROUND (reply > background rescan). Failed jobs: type/company/error class/attempts/last/next action → retry/inspect/dismiss. Bulk retry revalidates+idempotency. Dead letter with payload reference. Scheduled jobs: market rescans/signals/memory/knowledge review/analytics/maintenance. Misfire policy: run immediately/skip/recalculate next. Maintenance mode. Feature flags (engineering control, owner/admin only): new signal engine OFF, new evaluator 10% test, experimental agent TEST ONLY.
+
+## 62-67. Environment + Deployment + Migrations + Logs + Correlation IDs
+Production, app version, API version, DB schema, last deployment. Logs per service; sensitive redacted. Search: time/severity/service/correlation ID/company/job/provider. Correlation IDs trace API→queue→worker→Gmail→webhook→conversation.
+
+## 68-69. Event Explorer + Event Replay
+lead.discovered/company.enriched/email.sent/reply.received/meeting.booked/opportunity.won. Event replay separate from command execution; email.send replay must not resend.
+
+## 70-72. Audit Center vs Activity
+Audit: who/what/when/entity/before/after/source. Search: who changed pricing authority, paused outbound, exported contacts, changed AI level.
+
+## 73-77. Import/Export
+Import CSV companies/CRM migration/contacts/opportunities/suppression/knowledge with validation preview + history + rollback where safe (no blind delete if conversations/opportunities exist). Suppression import dedicated safe workflow (normalize email/phone/domain/company). Export center with expiration.
+
+## 78-81. Developer Settings
+API/webhooks/event catalog/test mode/sandbox/feature flags/diagnostics. Test mode: outbound to test recipients only, test calendar, webhooks test endpoints, campaigns dry run. Production switch requires authorized deliberate action. Seed/test data clearly marked, excluded from revenue analytics.
+
+## 82-83. Data Repair Tools
+Merge duplicate company/rebuild analytics projection/reindex knowledge/recalculate score/reprocess failed event. All audited. Rebuild internal vs external side effect — rebuild analytics must not resend emails.
+
+## 84-85. Search Index Rebuild + Cache Management
+KB/vector index corrupt → rebuild from source documents. Clear safe app cache only; no random Redis flush.
+
+## 86-89. Storage + File Restrictions + System Limits
+Documents/snapshots/attachments/exports/meeting files usage. Upload: allowed types, max size, scanning, quota. Limits: markets/campaigns/mailboxes/members/storage/AI budget/provider budgets. Defaults vs hard limits.
+
+## 90-94. Configuration Versioning + Dependencies + Safe Delete + Defaults
+Pipeline/qualification/custom fields/notification defaults/retention history. Dependency check: field used by 12 campaign rules/4 reports/2 experiments/31 opportunities/1 proposal template. Archive not delete. New objects inherit defaults; changing default doesn't rewrite existing.
+
+## 95-97. Diagnostics + Status History + Support Bundle
+[RUN DIAGNOSTICS] → DB/Redis/Workers/Email/Calendar/AI/Storage/Queues/Scheduler → 8 healthy/1 degraded. Status history 30 days correlates sales anomalies. Generate diagnostic bundle with secrets/tokens/sensitive content excluded.
+
+## 98-99. Settings Search + Layout
+Search settings. Layout: sidebar + content.
+
+## 100. Final Admin Architecture
+BUSINESS CONFIGURATION: workspace/pipeline/qualification/fields/meetings/notifications. SECURITY/GOVERNANCE: auth/retention/export/audit/backups. SYSTEM OPERATIONS: health/queues/jobs/scheduler/logs/diagnostics. DEVELOPER: API/webhooks/events/test mode/feature flags.

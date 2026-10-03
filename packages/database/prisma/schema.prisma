@@ -1,0 +1,16 @@
+// Revenue OS — master data model.
+// Models are added incrementally per docs/06-tech-spec-2-database.md.
+// Phase 2 (Database Foundation) starts with: Workspace, User, Role, Permission, UserRole, AuthorityLimit,
+// then DomainEvent / OutboxEvent / AuditLog / ExternalAction / InboundEvent, then the CRM core.
+
+generator client {
+  provider               = "prisma-client"
+  output                 = "../src/generated/prisma"
+  moduleFormat           = "esm"
+  generatedFileExtension = "ts"
+  importFileExtension    = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}

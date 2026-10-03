@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #000d08;
+  --bg-elev: #00180f;
+  --bg-card: rgba(0, 24, 15, 0.72);
+  --border: rgba(0, 255, 133, 0.14);
+  --text: #e6fff2;
+  --muted: #7cbfa0;
+  --emerald: #00ff85;
+  --emerald-deep: #00a35c;
+  --mint: #a7f3d0;
+  --amber: #fbbf24;
+  --red: #f87171;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+}
+
+body {
+  background-image:
+    radial-gradient(1200px 600px at 50% 120%, rgba(0, 255, 133, 0.28), transparent 60%),
+    radial-gradient(900px 500px at 80% 100%, rgba(167, 243, 208, 0.18), transparent 60%),
+    linear-gradient(180deg, #000d08 0%, #00180f 55%, #003d24 100%);
+  background-attachment: fixed;
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.35);
+}
+
+.pill {
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+}
