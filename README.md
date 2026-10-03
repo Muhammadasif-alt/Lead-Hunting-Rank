@@ -1,4 +1,6 @@
-# Revenue OS — Autonomous Lead Hunting / AI Sales OS
+# Rank High Lead — AI Sales Operating System
+
+(Internal code name: Revenue OS — package names use `@revenue-os/*`.)
 
 AI Sales Operating System: user goal define kare, system prospect discovery → research → outreach → meeting booking tak kaam kare.
 Product vision: [docs/00-vision.md](docs/00-vision.md) · Kahan tak pohanche: **[docs/PROGRESS.md](docs/PROGRESS.md)**
@@ -34,7 +36,11 @@ Computer restart karein → Docker Desktop kholein → jab "Engine running" dikh
 
 ```
 apps/
-  web/        Next.js frontend (port 3000) — 18 screens, /diagnostics
+  web/        Next.js frontend (port 3000)
+              src/app/page.tsx       → landing page (components/landing/)
+              src/app/(app)/…        → app screens, shared sidebar/topbar (components/app/)
+              src/lib/screens.ts     → screen list: naam, icon, section, kis phase mein live
+              src/lib/roadmap.ts     → phases ki progress (docs/PROGRESS.md ke saath sync)
   api/        NestJS backend (port 4000) — saari business logic, /api/*
   worker/     BullMQ background jobs — discovery, research, email, AI...
 packages/
@@ -65,6 +71,7 @@ aur lambe kaam: **api → Redis/BullMQ queue → worker → result → PostgreSQ
 | `pnpm infra:up` / `infra:down` / `infra:logs` | Docker Postgres + Redis |
 | `pnpm build` | Sab build |
 | `pnpm typecheck` | TypeScript errors check |
+| `pnpm test` | Saare unit tests |
 | `pnpm db:migrate` | Prisma migration banao/chalao |
 | `pnpm db:studio` | Database browser mein dekho |
 | `pnpm format` | Code format (Prettier) |

@@ -28,3 +28,4 @@ This file is the entry point for Claude, Copilot, OpenCode, or any AI working on
 - When the user pastes a spec ("aisa spec aapko diya"), save it into the appropriate `docs/` file immediately.
 - Run `pnpm typecheck` before saying work is done; check `/diagnostics` when touching infra.
 - Next.js in this repo is a newer version than most training data — read `apps/web/AGENTS.md` before writing web code.
+- Web UI: use the design tokens/classes in `apps/web/src/app/globals.css` (`bg-surface`, `text-muted`, `.card`, `.btn-primary`…). App screens live in `src/app/(app)/` and are registered in `src/lib/screens.ts`. A screen shows an honest placeholder until its phase is built — no fake metrics. When a phase completes, update `docs/PROGRESS.md` and `apps/web/src/lib/roadmap.ts`.

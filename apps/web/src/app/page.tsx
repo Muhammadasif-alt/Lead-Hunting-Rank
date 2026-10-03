@@ -1,16 +1,36 @@
+import type { Metadata } from "next";
+import Navbar from "../components/landing/Navbar";
 import Hero from "../components/landing/Hero";
-import FeaturesTabs from "../components/landing/FeaturesTabs";
-import Testimonial from "../components/landing/Testimonial";
+import HowItWorks from "../components/landing/HowItWorks";
+import Features from "../components/landing/Features";
+import LeadHunterSpotlight from "../components/landing/LeadHunterSpotlight";
+import Agents from "../components/landing/Agents";
+import Safety from "../components/landing/Safety";
+import FAQ from "../components/landing/FAQ";
+import CTA from "../components/landing/CTA";
+import Footer from "../components/landing/Footer";
+
+export const metadata: Metadata = {
+  title: { absolute: "Rank High Lead — AI Sales Operating System" },
+  description:
+    "Find every business in your market, research them with evidence, and let AI agents run outreach to booked meetings — with policy-controlled autonomy and a built-in kill switch.",
+};
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-[#000d08]">
-      <Hero />
-      <FeaturesTabs />
-      <Testimonial />
-      <footer className="bg-[#000d08] px-6 py-12 text-center text-xs text-[#7cbfa0]">
-        © 2026 Revenue OS. All rights reserved.
-      </footer>
-    </main>
+    <div className="min-h-screen bg-canvas">
+      <Navbar />
+      <main>
+        <Hero />
+        <HowItWorks />
+        <Features />
+        <LeadHunterSpotlight />
+        <Agents />
+        <Safety />
+        <FAQ />
+        <CTA />
+      </main>
+      <Footer />
+    </div>
   );
 }
