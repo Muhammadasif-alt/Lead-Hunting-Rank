@@ -7,7 +7,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 
 | Phase | Name | Status |
 |---|---|---|
-| 0 | Engineering Setup | ✅ done 2026-10-04 (CI file ready, runs once repo is on GitHub) |
+| 0 | Engineering Setup | ✅ done 2026-10-04 |
 | 1 | Platform Foundation (logging, request/correlation IDs, error taxonomy) | ⬜ partly started (typed config done) |
 | 2 | Database Foundation | ⬜ |
 | 3 | Authentication + RBAC | ⬜ |
@@ -27,7 +27,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] Browser → Next.js → NestJS verified
 - [x] NestJS → PostgreSQL verified (2026-10-04, Docker pgvector/pg17 on :5433)
 - [x] NestJS → Redis → BullMQ → Worker job verified (2026-10-04, Redis on :6380)
-- [ ] CI basic checks — `.github/workflows/ci.yml` written; needs git repo + GitHub to run
+- [x] CI basic checks pass on GitHub (install → typecheck → build), 2026-10-04
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.
