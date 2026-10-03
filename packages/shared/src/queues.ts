@@ -21,9 +21,18 @@ export const JOBS = {
   diagnosticsPing: 'diagnostics.ping',
 } as const;
 
-export interface DiagnosticsPingData {
-  requestedAt: string;
+/**
+ * Every job payload carries tracing identity so the worker can continue the same correlation
+ * (Tech Spec #7 JobEnvelope). Payloads stay minimal — IDs, not whole records.
+ */
+export interface JobTracing {
   correlationId: string;
+  causationId?: string;
+  workspaceId?: string;
+}
+
+export interface DiagnosticsPingData extends JobTracing {
+  requestedAt: string;
 }
 
 export interface DiagnosticsPingResult {

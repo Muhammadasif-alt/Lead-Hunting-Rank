@@ -8,7 +8,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | Phase | Name | Status |
 |---|---|---|
 | 0 | Engineering Setup | ✅ done 2026-10-04 |
-| 1 | Platform Foundation (logging, request/correlation IDs, error taxonomy) | ⬜ partly started (typed config done) |
+| 1 | Platform Foundation (logging, request/correlation IDs, error taxonomy) | ✅ done 2026-10-04 |
 | 2 | Database Foundation | ⬜ |
 | 3 | Authentication + RBAC | ⬜ |
 | 4 | Events + Outbox + Queue | ⬜ |
@@ -28,6 +28,17 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] NestJS → PostgreSQL verified (2026-10-04, Docker pgvector/pg17 on :5433)
 - [x] NestJS → Redis → BullMQ → Worker job verified (2026-10-04, Redis on :6380)
 - [x] CI basic checks pass on GitHub (install → typecheck → build), 2026-10-04
+
+## Phase 1 — Definition of Done
+- [x] Typed config: DB/Redis/APP_ENV/APP_URL/LOG_*/LLM/storage/encryption; startup fails clearly (`packages/config`)
+- [x] Structured logging (pino) with secret redaction; pretty in dev, JSON elsewhere (`@revenue-os/shared/server`)
+- [x] Every request/job carries requestId / correlationId (+ workspaceId / actorId slots for Phase 3) via AsyncLocalStorage
+- [x] Correlation flows API → BullMQ job → worker logs; client `x-correlation-id` accepted only if safe
+- [x] Error taxonomy (Validation/Forbidden/AuthorityExceeded/NotFound/Conflict/BusinessRule/Policy/Provider/RateLimited) → `{ error: { code, message, details, requestId } }`; unknown errors → 500 without leaking internals
+- [x] Success envelope `{ data, meta: { requestId } }`, `/api/v1` URI versioning
+- [x] Zod validation pipe (strict objects reject unknown fields)
+- [x] Health split: `/api/health/live`, `/api/health/ready`, `/api/health` (full diagnostics)
+- [x] Unit tests (`pnpm test`, Node test runner) + CI runs them
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

@@ -23,7 +23,8 @@
     "db:migrate": "pnpm --filter @revenue-os/database db:migrate",
     "db:studio": "pnpm --filter @revenue-os/database db:studio",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "test": "pnpm build:packages && pnpm -r test"
   },
   "devDependencies": {
     "prettier": "^3.9.9",

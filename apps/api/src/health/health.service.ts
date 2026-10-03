@@ -1,5 +1,5 @@
-import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
+import { getContext, newId } from '@revenue-os/shared/server';
 import {
   describeError,
   JOBS,
@@ -21,10 +21,16 @@ export class HealthService {
     private readonly queues: QueueService,
   ) {}
 
+  async readiness() {
+    const [postgres, redis] = await Promise.all([this.checkPostgres(), this.checkRedis()]);
+    const status = postgres.status === 'up' && redis.status === 'up' ? 'up' : 'down';
+    return { status, components: { postgres, redis } };
+  }
+
   async check(): Promise<SystemHealth> {
     const [postgres, redis, worker] = await Promise.all([
-      timed(() => this.prisma.client.$queryRaw`SELECT 1`),
-      timed(() => this.queues.maintenance.getVersion()),
+      this.checkPostgres(),
+      this.checkRedis(),
       timed(() => this.pingWorker()),
     ]);
     const components = { api: { status: 'up' as const }, postgres, redis, worker };
@@ -32,11 +38,24 @@ export class HealthService {
     return { status: allUp ? 'up' : 'down', checkedAt: new Date().toISOString(), components };
   }
 
-  /** Enqueues a ping job and waits for a worker to finish it — proves the full queue round trip. */
+  private checkPostgres() {
+    return timed(() => this.prisma.client.$queryRaw`SELECT 1`);
+  }
+
+  private checkRedis() {
+    return timed(() => this.queues.maintenance.getVersion());
+  }
+
+  /**
+   * Enqueues a ping job and waits for a worker to finish it — proves the full queue round trip.
+   * The request's correlationId travels with the job, so API and worker log lines share it.
+   */
   private async pingWorker(): Promise<DiagnosticsPingResult> {
+    const ctx = getContext();
     const data: DiagnosticsPingData = {
       requestedAt: new Date().toISOString(),
-      correlationId: randomUUID(),
+      correlationId: ctx?.correlationId ?? newId(),
+      causationId: ctx?.requestId,
     };
     const job = await this.queues.maintenance.add(JOBS.diagnosticsPing, data, {
       removeOnComplete: 100,
