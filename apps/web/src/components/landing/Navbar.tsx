@@ -61,7 +61,7 @@ export default function Navbar() {
         </ul>
 
         <div className="hidden items-center gap-2 md:flex">
-          <Link href="/dashboard" className="btn btn-ghost">
+          <Link href="/login" className="btn btn-ghost">
             Sign in
           </Link>
           <Link href="/dashboard" className="btn btn-primary">
@@ -97,7 +97,7 @@ export default function Navbar() {
             ))}
           </ul>
           <div className="mx-auto flex max-w-7xl gap-2 border-t border-line px-4 py-4 sm:px-6">
-            <Link href="/dashboard" className="btn btn-secondary flex-1" onClick={() => setOpen(false)}>
+            <Link href="/login" className="btn btn-secondary flex-1" onClick={() => setOpen(false)}>
               Sign in
             </Link>
             <Link href="/dashboard" className="btn btn-primary flex-1" onClick={() => setOpen(false)}>

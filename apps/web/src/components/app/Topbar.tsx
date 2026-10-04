@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, Search } from "lucide-react";
 import { SCREENS, screenForPath } from "@/lib/screens";
+import { UserMenu } from "./UserMenu";
 
 /** Quick navigation: filters screens as you type; ⌘K / Ctrl+K focuses it. */
 function ScreenSearch() {
@@ -115,13 +116,8 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
       <div className="flex flex-1 justify-end md:justify-center">
         <ScreenSearch />
       </div>
-      <div className="hidden w-40 justify-end md:flex">
-        <div
-          className="grid size-8 place-items-center rounded-full bg-raised text-xs font-semibold text-muted ring-1 ring-line-strong"
-          title="Sign-in arrives with authentication (Phase 3)"
-        >
-          You
-        </div>
+      <div className="flex justify-end md:w-40">
+        <UserMenu />
       </div>
     </header>
   );

@@ -2,11 +2,13 @@ import { Controller, Get, HttpCode, Res, VERSION_NEUTRAL } from '@nestjs/common'
 import type { Response } from 'express';
 import type { SystemHealth } from '@revenue-os/shared';
 import { RawResponse } from '../common/envelope.interceptor.js';
+import { Public } from '../modules/auth/auth.decorators.js';
 import { HealthService } from './health.service.js';
 
 /** Infrastructure endpoints — version-neutral (/api/health…) and not wrapped in the data envelope. */
 @Controller({ path: 'health', version: VERSION_NEUTRAL })
 @RawResponse()
+@Public()
 export class HealthController {
   constructor(private readonly health: HealthService) {}
 

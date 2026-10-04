@@ -20,7 +20,10 @@ pnpm db:seed         # dev workspace + owner user + roles + default pipeline
 pnpm dev            # web + api + worker ek saath start
 ```
 
-Phir browser mein kholein: **http://localhost:3000/diagnostics** — paanchon rows ✓ honi chahiye:
+Phir browser mein kholein: **http://localhost:3000/login** — dev users (`pnpm db:seed` se), sab ka password `rankhighlead-dev`:
+`owner@` · `admin@` · `sales@` · `researcher@` · `viewer@rankhighlead.dev` (login page pe buttons bhi hain).
+
+System check: **http://localhost:3000/diagnostics** — paanchon rows ✓ honi chahiye:
 Web · API · PostgreSQL · Redis · Worker.
 
 Roz ka kaam: `pnpm infra:up` (agar Docker band tha) → `pnpm dev`. Band karna: `Ctrl+C`, phir `pnpm infra:down`.

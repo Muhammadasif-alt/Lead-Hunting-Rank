@@ -21,6 +21,7 @@ This file is the entry point for Claude, Copilot, OpenCode, or any AI working on
 - AI proposes; deterministic Policy Engine decides (ACT / ASK / WAIT / BLOCK). LLM output never writes straight to the DB.
 - Every external side effect goes through ExternalAction + idempotency + policy + kill switch.
 - Controllers never touch Prisma directly — application services do.
+- Every API route is authenticated by default (global guards). Mark only login/health-type routes `@Public()`; protect actions with `@RequirePermission('…')` and authority checks via `AccessService`. Services take a `ServiceContext` (workspace + actor) built from the session — never a workspaceId/userId from the request body.
 - Config only via `loadConfig()` from `@revenue-os/config`; queue names only from `@revenue-os/shared`.
 - Not a GHL clone. Mental model: Goal → Intelligence → Decision → Action → Outcome → Learning.
 
@@ -28,4 +29,4 @@ This file is the entry point for Claude, Copilot, OpenCode, or any AI working on
 - When the user pastes a spec ("aisa spec aapko diya"), save it into the appropriate `docs/` file immediately.
 - Run `pnpm typecheck` before saying work is done; check `/diagnostics` when touching infra.
 - Next.js in this repo is a newer version than most training data — read `apps/web/AGENTS.md` before writing web code.
-- Web UI: use the design tokens/classes in `apps/web/src/app/globals.css` (`bg-surface`, `text-muted`, `.card`, `.btn-primary`…). App screens live in `src/app/(app)/` and are registered in `src/lib/screens.ts`. A screen shows an honest placeholder until its phase is built — no fake metrics. When a phase completes, update `docs/PROGRESS.md` and `apps/web/src/lib/roadmap.ts`.
+- Web UI: use the design tokens/classes in `apps/web/src/app/globals.css` (`bg-surface`, `text-muted`, `.card`, `.btn-primary`…). App screens live in `src/app/(app)/` and are registered in `src/lib/screens.ts`. A screen shows an honest placeholder until its phase is built — no fake metrics. Each area has a colour tone (`tone` in `screens.ts`: leads/email/sales/ai/insight/system) — new screens must pick the right one. When a phase completes, update `docs/PROGRESS.md` and `apps/web/src/lib/roadmap.ts`.

@@ -6,6 +6,7 @@ import { HealthList } from "@/components/app/HealthList";
 import { PageHeader } from "@/components/app/PageHeader";
 import { ROADMAP, CURRENT_PHASE } from "@/lib/roadmap";
 import { findScreen, SCREENS } from "@/lib/screens";
+import { useMe } from "@/lib/session-context";
 import { useSystemHealth } from "@/lib/use-system-health";
 
 function greeting() {
@@ -19,6 +20,7 @@ function greeting() {
  */
 export function CommandCenter() {
   const { rows, allUp, loading, refresh } = useSystemHealth();
+  const me = useMe();
   const done = ROADMAP.filter((p) => p.done).length;
   const pct = Math.round((done / ROADMAP.length) * 100);
   const next = ROADMAP.filter((p) => !p.done).slice(0, 4);
@@ -35,11 +37,14 @@ export function CommandCenter() {
         <div className="pointer-events-none absolute -bottom-32 left-10 size-72 rounded-full bg-brand/10 blur-3xl" />
         <div className="relative flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-sm text-muted">{greeting()}</p>
+            <p className="text-sm text-muted">
+              {greeting()}, {me.user.name.split(" ")[0]}
+            </p>
             <h2 className="mt-1 text-2xl font-semibold tracking-tight sm:text-3xl">The foundation is in place.</h2>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-muted">
-              Phases 0–{CURRENT_PHASE} are complete. Next up is the database foundation, then authentication — after that
-              the Company 360 and Lead Hunter screens start showing real data.
+              Phases 0–{CURRENT_PHASE} are complete.
+              {next[0] && ` Next up: ${next[0].name.toLowerCase()}${next[1] ? `, then ${next[1].name.toLowerCase()}` : ""}.`}{" "}
+              Screens light up with real data as their phase is built — nothing here is a placeholder number.
             </p>
           </div>
           <Link href="/lead-hunter" className="btn btn-primary btn-lg shrink-0">

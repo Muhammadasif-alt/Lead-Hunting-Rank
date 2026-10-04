@@ -10,7 +10,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 0 | Engineering Setup | ✅ done 2026-10-04 |
 | 1 | Platform Foundation (logging, request/correlation IDs, error taxonomy) | ✅ done 2026-10-04 |
 | 2 | Database Foundation | ✅ done 2026-10-04 |
-| 3 | Authentication + RBAC | ⬜ |
+| 3 | Authentication + RBAC | ✅ done 2026-10-04 |
 | 4 | Events + Outbox + Queue | ⬜ |
 | 5 | Provider Gateway (fake providers first) | ⬜ |
 | 6 | CRM Core — Company 360 | ⬜ |
@@ -48,6 +48,17 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] Dev seed (`pnpm db:seed`, idempotent): workspace, owner user, 5 roles + grants, authority limits, default pipeline (7 stages), hard-safety policy skeleton
 - [x] Application services (`apps/api/src/modules`): create workspace/member, company (+aliases, optimistic concurrency), person, employment, contact point (unverified by default), evidence, fact (confirm / conflict / explicit supersede — never blind overwrite); every change audited in the same transaction
 - [x] Integration tests against a real `revenue_os_test` database (`pnpm test`), CI runs them with a Postgres service
+
+## Phase 3 — Definition of Done
+- [x] Login / logout / server-side sessions: random token in an HttpOnly + SameSite=Lax cookie (Secure in production), only its SHA-256 stored; 12 h idle timeout + 7 day absolute lifetime; list + revoke sessions
+- [x] Password security: Argon2id (Node built-in, OWASP parameters), length-based policy + common-password block, generic errors and constant-ish timing (no account enumeration), per-account + per-IP lockout in Redis (429), step-up re-check to change password (revokes other sessions)
+- [x] CSRF: state-changing requests must come from our own origin (applies to login too)
+- [x] Global guards, fail-closed: Authentication → Workspace (membership verified server-side, `x-workspace-id` can't reach other workspaces) → Permission (`@RequirePermission`) → Scope; `@Public()` opt-out only for login/logout/health
+- [x] Role + permission resolution with DENY-wins, authority limits (role, member override, `null` = unlimited); AccessService answers: launch campaign? approve discount? change policy? resume emergency stop?
+- [x] Seeded roles OWNER/ADMIN/SALES/RESEARCHER/VIEWER + one dev user per role (`pnpm db:seed`)
+- [x] RBAC tests: cross-workspace denied, viewer cannot write, researcher cannot send, sales cannot change policy, admin respected (owner-only ops held back), owner authority, deny wins, member override, suspended member; HTTP e2e: cookies, 401/403/429, CSRF, logout revocation
+- [x] Web: `/login` page, `proxy.ts` optimistic redirect, `(app)` layout validates the session with the API, user menu with sign-out; landing "Sign in" → `/login`
+- Deferred by plan: password reset email (needs Email provider, Phase 5/10), MFA enforcement for OWNER/ADMIN (Phase 22 hardening — schema is MFA-ready), invite acceptance flow (Team & Roles, Phase 21)
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

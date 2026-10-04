@@ -43,6 +43,11 @@ export class QueueService implements OnModuleDestroy {
     return events;
   }
 
+  /** Shared non-blocking Redis client, also used for short-lived counters (e.g. login rate limits). */
+  get redis(): Redis {
+    return this.connection;
+  }
+
   get maintenance(): Queue {
     return this.queue(QUEUES.maintenance);
   }

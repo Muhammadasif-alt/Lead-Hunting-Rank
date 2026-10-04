@@ -2,12 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsUpDown } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
 import { SCREEN_GROUPS, SCREENS, TONE_ORDER, TONES } from "@/lib/screens";
+import { useMe } from "@/lib/session-context";
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
+  const me = useMe();
 
   return (
     <div className="flex h-full flex-col">
@@ -15,15 +16,17 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
         <Logo href="/" size="sm" />
       </div>
 
-      <button
-        type="button"
-        className="mx-3 mb-2 flex items-center gap-2.5 rounded-lg border border-line bg-raised px-2.5 py-2 text-left transition-colors hover:bg-hover"
-        title="Workspaces arrive with authentication (Phase 3)"
-      >
-        <span className="grid size-6 place-items-center rounded-md bg-brand-soft text-xs font-bold text-brand">R</span>
-        <span className="flex-1 truncate text-sm font-medium">My workspace</span>
-        <ChevronsUpDown className="size-3.5 text-faint" />
-      </button>
+      <div className="mx-3 mb-2 flex items-center gap-2.5 rounded-lg border border-line bg-raised px-2.5 py-2" title={me.workspace.name}>
+        <span className="grid size-6 place-items-center rounded-md bg-brand-soft text-xs font-bold text-brand">
+          {me.workspace.name.charAt(0).toUpperCase()}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{me.workspace.name}</span>
+          <span className="block truncate text-[11px] text-faint">
+            {me.roles.map((r) => r.charAt(0) + r.slice(1).toLowerCase()).join(", ")}
+          </span>
+        </span>
+      </div>
 
       <nav className="flex-1 overflow-y-auto px-3 pb-4" aria-label="Main">
         {SCREEN_GROUPS.map((group) => (
