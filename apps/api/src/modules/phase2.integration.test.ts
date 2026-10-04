@@ -6,6 +6,7 @@ import type { PrismaService } from '../infra/prisma.service.js';
 import type { ServiceContext } from '../domain/service-context.js';
 import { SYSTEM_ACTOR, setupTestDatabase, uniqueSlug } from '../testing/test-db.js';
 import { CompanyService } from './crm/company.service.js';
+import { EntityResolutionService } from './crm/entity-resolution.service.js';
 import { ContactPointService } from './crm/contact-point.service.js';
 import { PersonService } from './crm/person.service.js';
 import { EvidenceService } from './evidence/evidence.service.js';
@@ -23,7 +24,7 @@ describe('Phase 2 — database foundation through application services', () => {
   before(async () => {
     ({ prisma, close } = await setupTestDatabase());
     workspaces = new WorkspaceService(prisma);
-    companies = new CompanyService(prisma);
+    companies = new CompanyService(prisma, new EntityResolutionService(prisma));
     people = new PersonService(prisma);
     contacts = new ContactPointService(prisma);
     evidence = new EvidenceService(prisma);

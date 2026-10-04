@@ -13,7 +13,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 3 | Authentication + RBAC | ✅ done 2026-10-04 |
 | 4 | Events + Outbox + Queue | ✅ done 2026-10-04 |
 | 5 | Provider Gateway (fake providers first) | ✅ done 2026-10-04 |
-| 6 | CRM Core — Company 360 | ⬜ |
+| 6 | CRM Core — Company 360 | ✅ done 2026-10-04 |
 | 7 | Lead Hunter — Market Exhaust | ⬜ |
 | 8 … 24 | Research → AI → Policy → Campaigns → Inbox → … → Autonomy rollout | ⬜ |
 
@@ -86,6 +86,21 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] Integrations API (`/api/v1/integrations`: list, catalog, usage, connect, test, disable, enable, disconnect) — audited, events in the same transaction, reconnect restores the same identity, no credential fields leave the API; `integration.read` (all roles) / `integration.manage` (owner, admin)
 - [x] Integrations screen (#15) live: connected cards with capability health, 24 h calls/failures/latency/cost, Test/Disable/Enable/Disconnect, available test providers, planned vendors shown honestly with their phase
 - Deferred by plan: credential storage + OAuth (with the first real vendor — Anthropic Phase 9, Gmail Phase 10), webhooks/polling cursors (Gmail sync, Phase 11), budget reservation for paid calls and WATERFALL/PARALLEL/CONSENSUS routing (Lead Hunter, Phase 7)
+
+## Phase 6 — Definition of Done
+- [x] Company 360 V1 answers the six questions: who are they (profile, status, aliases), where did the data come from (record origin, evidence sources, provider ids), who works there (current + former employment), how can we contact them (company + person contact points, honestly UNVERIFIED until a verification exists), what do we know (facts with their evidence), how fresh is it (per fact and per company, from evidence observed_at — FRESH ≤ 90 d, AGING ≤ 180 d, STALE)
+- [x] Company list (search by name/website/phone/city, status filter, cursor pagination, duplicate + freshness badges), create with a live duplicate preview, edit (optimistic concurrency), archive / restore as explicit commands (no status PATCH)
+- [x] People: add a person to a company in one transaction, edit, end employment (history kept), no duplicate person at one company; contact points: add, make primary, archive (re-adding restores the same row)
+- [x] Evidence + facts from the UI: "Record what you found" stores Evidence and Fact in one transaction; a different value makes both CONFLICTED ("needs verification") and a human picks the correct one (rivals SUPERSEDED, evidence kept)
+- [x] Entity resolution foundation: normalized name / domain / phone / address keys, aliases, external mappings, trigram name similarity (pg_trgm), deterministic scoring (`scoreCompanyMatch` in `@revenue-os/shared`, browser-safe and reusable by Lead Hunter) with matching and conflicting signals; shared hosts (facebook.com, yelp.com…) never count as a match
+- [x] EntityMatchCandidate instead of auto-merge: LOW → PENDING, MEDIUM/HIGH → NEEDS_REVIEW; a rejected pair is never proposed again; candidates close themselves when an edit removes the similarity or a record is archived; concurrent creates of the same business are serialized with transaction-scoped advisory locks so no pair is missed
+- [x] Auto-merge only where safe: HIGH confidence, zero conflicts, same website plus name or phone, and only for records created by the system/integrations — a record a person typed in is never merged without a person
+- [x] Merge preserves source history: people, contact points (identical ones archived, not lost), evidence (original source + observed_at), facts (same value → one fact with both sources; different values → CONFLICTED), provider mappings and aliases move to the survivor; empty fields are filled, nothing overwritten; the source stays ARCHIVED with `mergedIntoId`; an append-only `EntityMerge` (DB trigger) keeps the source snapshot and every moved id; merge-chains stay one hop; both rows locked `FOR UPDATE` in a stable order
+- [x] Every change audited + domain event in the same transaction (CompanyArchived/Restored, PersonUpdated, EmploymentEnded, ContactPointUpdated/Archived, DuplicateCandidateDetected/Rejected, CompaniesMerged); Activity timeline built from the audit trail of the company and everything attached to it
+- [x] API `/api/v1/companies…`, `/people…`, `/employments…`, `/contact-points…`, `/facts/:id/resolve`, `/duplicates…`; permissions `company.read` / `company.update` / `evidence.manage` / new `company.merge` (owner, admin, researcher); the overview returns `allowedActions`, the UI only shows those
+- [x] Screens: Companies list, Company 360° (Overview, People, Intelligence, Evidence, Activity — Digital presence / Conversations / Opportunities / Memory shown with their phase; ICP / Opportunity / Intent shown as "Not scored", never faked), Duplicate review (side-by-side, why they match / what disagrees, keep left / keep right / not the same); works from 360 px without horizontal scroll
+- [x] Tests: scoring unit tests (shared) + integration tests (detection, safe auto-merge, manual merge history, rejection, advisory lock, archive/restore, contact points, the six questions, HTTP role checks)
+- Deferred by plan: research-driven company fields, website, digital presence and scores (Phase 8–9), person-level entity resolution and Prospect 360 intelligence (Phase 8), company notes (Phase 14 with memory), bulk import (Phase 22), re-pointing ExternalActions on merge (none reference companies before Phase 10)
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

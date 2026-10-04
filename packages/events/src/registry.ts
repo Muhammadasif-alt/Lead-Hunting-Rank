@@ -21,6 +21,17 @@ export interface EventPayloads {
   PersonCreated: { personId: string };
   EmploymentAttached: { employmentId: string; personId: string; companyId: string };
   ContactPointAdded: { contactPointId: string; entityType: string; entityId: string; type: string };
+  CompanyArchived: { companyId: string; reason: string | null };
+  CompanyRestored: { companyId: string };
+  PersonUpdated: { personId: string; version: number; changedFields: string[] };
+  EmploymentEnded: { employmentId: string; personId: string; companyId: string };
+  ContactPointUpdated: { contactPointId: string; entityType: string; entityId: string; changedFields: string[] };
+  ContactPointArchived: { contactPointId: string; entityType: string; entityId: string };
+  // entity resolution (docs/17 §40-45)
+  DuplicateCandidateDetected: { candidateId: string; entityType: string; leftId: string; rightId: string; score: number; confidence: string };
+  DuplicateCandidateRejected: { candidateId: string; entityType: string; leftId: string; rightId: string };
+  /** Source was merged into target; the source row is archived and kept for history. */
+  CompaniesMerged: { mergeId: string; sourceCompanyId: string; targetCompanyId: string; mode: 'MANUAL' | 'AUTO'; candidateId: string | null };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -62,7 +73,17 @@ export interface ProviderHealthPayload {
 
 export type EventType = keyof EventPayloads;
 
-export type AggregateType = 'WORKSPACE' | 'COMPANY' | 'PERSON' | 'EMPLOYMENT' | 'CONTACT_POINT' | 'EVIDENCE' | 'FACT' | 'EXTERNAL_ACTION' | 'INTEGRATION';
+export type AggregateType =
+  | 'WORKSPACE'
+  | 'COMPANY'
+  | 'PERSON'
+  | 'EMPLOYMENT'
+  | 'CONTACT_POINT'
+  | 'EVIDENCE'
+  | 'FACT'
+  | 'EXTERNAL_ACTION'
+  | 'INTEGRATION'
+  | 'ENTITY_MATCH_CANDIDATE';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -123,6 +144,15 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   PersonCreated: entity('crm', 'PERSON', 'A person record was created'),
   EmploymentAttached: entity('crm', 'EMPLOYMENT', 'A person was linked to a company'),
   ContactPointAdded: entity('crm', 'CONTACT_POINT', 'An email/phone/… was added to a person or company'),
+  CompanyArchived: entity('crm', 'COMPANY', 'A company was archived (kept for history, hidden from lists)'),
+  CompanyRestored: entity('crm', 'COMPANY', 'An archived company was restored'),
+  PersonUpdated: entity('crm', 'PERSON', 'Person fields changed (names of the fields, not values)'),
+  EmploymentEnded: entity('crm', 'EMPLOYMENT', 'A person no longer works at a company (history kept)'),
+  ContactPointUpdated: entity('crm', 'CONTACT_POINT', 'A contact point changed (e.g. became primary)'),
+  ContactPointArchived: entity('crm', 'CONTACT_POINT', 'A contact point was removed from use (kept for history)'),
+  DuplicateCandidateDetected: entity('crm', 'ENTITY_MATCH_CANDIDATE', 'Two records may be the same business — review needed'),
+  DuplicateCandidateRejected: entity('crm', 'ENTITY_MATCH_CANDIDATE', 'A human said two records are different businesses'),
+  CompaniesMerged: entity('crm', 'COMPANY', 'Two company records were merged; source history preserved'),
   EvidenceRecorded: entity('evidence', 'EVIDENCE', 'Evidence from a source was stored'),
   FactRecorded: entity('evidence', 'FACT', 'A fact was created or confirmed by new evidence'),
   FactConflicted: entity('evidence', 'FACT', 'New evidence disagrees with an existing fact — needs resolution'),

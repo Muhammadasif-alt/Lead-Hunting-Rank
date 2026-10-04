@@ -5,3 +5,4 @@ export * from './errors.js';
 export * from './api.js';
 export * from './rbac.js';
 export * from './normalize.js';
+export * from './entity-resolution.js';

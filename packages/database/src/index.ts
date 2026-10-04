@@ -3,7 +3,24 @@ import { PrismaClient } from './generated/prisma/client.js';
 
 export { PrismaClient };
 export { Prisma } from './generated/prisma/client.js';
-export type { DeadLetterRecord, DomainEvent, ExternalAction, Integration, IntegrationCapabilityHealth, OutboxEvent, ProviderCallRecord } from './generated/prisma/client.js';
+export type {
+  Company,
+  CompanyAlias,
+  ContactPoint,
+  DeadLetterRecord,
+  DomainEvent,
+  Employment,
+  EntityMatchCandidate,
+  EntityMerge,
+  Evidence,
+  ExternalAction,
+  Fact,
+  Integration,
+  IntegrationCapabilityHealth,
+  OutboxEvent,
+  Person,
+  ProviderCallRecord,
+} from './generated/prisma/client.js';
 export * from './generated/prisma/enums.js';
 export { provisionWorkspaceDefaults, syncPermissionCatalog } from './bootstrap.js';
 

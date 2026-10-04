@@ -48,6 +48,27 @@ export function normalizeEmail(input: string): string | null {
   return `${value.slice(0, at)}@${domain}`;
 }
 
+const ADDRESS_WORDS: Record<string, string> = {
+  street: 'st', avenue: 'ave', av: 'ave', road: 'rd', boulevard: 'blvd', drive: 'dr', lane: 'ln', court: 'ct', place: 'pl',
+  parkway: 'pkwy', highway: 'hwy', circle: 'cir', terrace: 'ter', square: 'sq', trail: 'trl', way: 'way', suite: 'ste',
+  apartment: 'apt', building: 'bldg', floor: 'fl', unit: 'unit', north: 'n', south: 's', east: 'e', west: 'w',
+  northeast: 'ne', northwest: 'nw', southeast: 'se', southwest: 'sw',
+};
+
+/** "123 North Main Street, Suite 4" → "123 n main st ste 4". Only a comparable key — no geocoding, no validation. */
+export function normalizeAddress(input: string): string | null {
+  const words = input
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/#/g, ' ste ')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => ADDRESS_WORDS[w] ?? w);
+  return words.length ? words.join(' ') : null;
+}
+
 /**
  * Keeps digits (and a leading +). Numbers without a country code get `defaultCountryCode` (US "1" by default),
  * so "(512) 555-0100" and "+1 512 555 0100" compare equal. Returns null for implausible lengths.

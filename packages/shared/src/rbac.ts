@@ -12,6 +12,7 @@ export type ActionClass = 'A' | 'B' | 'C' | 'D' | 'E';
 export const PERMISSIONS = {
   'company.read': { class: 'A', description: 'View companies, people, evidence and facts' },
   'company.update': { class: 'B', description: 'Create and edit companies, people and contact points' },
+  'company.merge': { class: 'B', description: 'Merge duplicate companies or mark them as not duplicates (history is kept)' },
   'evidence.manage': { class: 'B', description: 'Add evidence and correct facts' },
   'market.read': { class: 'A', description: 'View markets and discovery missions' },
   'market.create': { class: 'B', description: 'Define markets' },
@@ -83,7 +84,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     'task.manage',
     'outbound.pause',
   ],
-  RESEARCHER: [...READ, 'company.update', 'evidence.manage', 'market.create', 'market.run', 'task.manage'],
+  RESEARCHER: [...READ, 'company.update', 'company.merge', 'evidence.manage', 'market.create', 'market.run', 'task.manage'],
   VIEWER: READ,
 };
 

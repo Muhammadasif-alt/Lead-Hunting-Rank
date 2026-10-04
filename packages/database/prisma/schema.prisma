@@ -47,6 +47,7 @@ enum EntityType {
   FACT
   EXTERNAL_ACTION
   INTEGRATION
+  ENTITY_MATCH_CANDIDATE
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -95,6 +96,8 @@ model Workspace {
   inboundEvents          InboundEvent[]
   integrations           Integration[]
   integrationHealth      IntegrationCapabilityHealth[]
+  matchCandidates        EntityMatchCandidate[]
+  entityMerges           EntityMerge[]
 }
 
 enum UserStatus {
@@ -344,16 +347,24 @@ model Company {
   createdBy      String?       @db.Uuid
   updatedBy      String?       @db.Uuid
   archivedAt     DateTime?     @db.Timestamptz(3)
+  /// Set when this record was merged into another (it is then ARCHIVED). The row stays for history.
+  mergedIntoId   String?       @db.Uuid
+  mergedAt       DateTime?     @db.Timestamptz(3)
   version        Int           @default(1)
 
   workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  mergedInto  Company?       @relation("CompanyMerge", fields: [mergedIntoId], references: [id], onDelete: Restrict)
+  mergedFrom  Company[]      @relation("CompanyMerge")
   aliases     CompanyAlias[]
   employments Employment[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, normalizedName])
+  @@index([normalizedName(ops: raw("gin_trgm_ops"))], type: Gin, map: "Company_normalizedName_trgm_idx")
   @@index([workspaceId, websiteDomain])
-  @@index([workspaceId, status])
+  @@index([workspaceId, phone])
+  @@index([workspaceId, status, updatedAt])
+  @@index([workspaceId, mergedIntoId])
 }
 
 enum AliasType {
@@ -528,6 +539,77 @@ model ContactVerification {
   contactPoint ContactPoint @relation(fields: [workspaceId, contactPointId], references: [workspaceId, id], onDelete: Cascade)
 
   @@index([workspaceId, contactPointId, verifiedAt])
+}
+
+enum MatchCandidateStatus {
+  PENDING
+  NEEDS_REVIEW
+  AUTO_RESOLVED
+  MERGED
+  REJECTED
+}
+
+/**
+ * "These two records may be the same business" (docs/06 §15-21, docs/04 §76). Entity resolution proposes; it never
+ * blindly merges. leftId < rightId so a pair has exactly one row. A REJECTED pair is never proposed again.
+ * PENDING = low confidence, NEEDS_REVIEW = a human should decide.
+ */
+model EntityMatchCandidate {
+  id                 String               @id @default(uuid()) @db.Uuid
+  workspaceId        String               @db.Uuid
+  entityType         EntityType
+  leftId             String               @db.Uuid
+  rightId            String               @db.Uuid
+  score              Int
+  confidence         ConfidenceLevel
+  matchingSignals    Json
+  conflictingSignals Json
+  status             MatchCandidateStatus @default(NEEDS_REVIEW)
+  detectedAt         DateTime             @default(now()) @db.Timestamptz(3)
+  lastEvaluatedAt    DateTime             @default(now()) @db.Timestamptz(3)
+  resolvedAt         DateTime?            @db.Timestamptz(3)
+  resolvedByType     ActorType?
+  resolvedById       String?              @db.Uuid
+  resolution         String?
+  mergeId            String?              @db.Uuid
+  version            Int                  @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, entityType, leftId, rightId])
+  @@index([workspaceId, entityType, status])
+  @@index([workspaceId, rightId])
+}
+
+enum MergeMode {
+  MANUAL
+  AUTO
+}
+
+/**
+ * A completed merge, append-only. Keeps the source row as it was and every id that moved, so the history of where
+ * data came from is never lost (docs/17 §40-45 "merge preserves source history").
+ */
+model EntityMerge {
+  id             String     @id @default(uuid()) @db.Uuid
+  workspaceId    String     @db.Uuid
+  entityType     EntityType
+  sourceId       String     @db.Uuid
+  targetId       String     @db.Uuid
+  candidateId    String?    @db.Uuid
+  mode           MergeMode
+  reason         String?
+  actorType      ActorType
+  actorId        String?    @db.Uuid
+  sourceSnapshot Json
+  moved          Json
+  filledFields   String[]
+  mergedAt       DateTime   @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, targetId])
+  @@index([workspaceId, sourceId])
 }
 
 // ──────────────────────────── 04 Intelligence & Evidence ────────────────────────────

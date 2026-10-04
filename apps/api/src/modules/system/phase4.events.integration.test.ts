@@ -22,6 +22,7 @@ import type { ServiceContext } from '../../domain/service-context.js';
 import type { PrismaService } from '../../infra/prisma.service.js';
 import { SYSTEM_ACTOR, setupTestDatabase, uniqueSlug } from '../../testing/test-db.js';
 import { CompanyService } from '../crm/company.service.js';
+import { EntityResolutionService } from '../crm/entity-resolution.service.js';
 import { WorkspaceService } from '../identity/workspace.service.js';
 
 /** Phase 4 (docs/17 §26-33): transactional outbox, dispatcher, ExternalAction idempotency, reconciliation, DLQ, inbox. */
@@ -33,7 +34,7 @@ describe('Phase 4 — events, outbox and external actions', () => {
 
   before(async () => {
     ({ prisma, close } = await setupTestDatabase());
-    companies = new CompanyService(prisma);
+    companies = new CompanyService(prisma, new EntityResolutionService(prisma));
     const ws = await new WorkspaceService(prisma).createWorkspace(SYSTEM_ACTOR, {
       name: 'Events Test',
       slug: uniqueSlug('events'),
