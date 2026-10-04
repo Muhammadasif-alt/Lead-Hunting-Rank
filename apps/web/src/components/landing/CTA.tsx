@@ -16,7 +16,10 @@ export default function CTA() {
             className="pointer-events-none absolute -bottom-32 left-1/2 -z-10 h-72 w-[640px] max-w-[120vw] -translate-x-1/2 rounded-full bg-brand/15 blur-3xl"
           />
           <LogoMark className="mx-auto h-9 w-auto" />
-          <h2 id="cta-title" className="mx-auto mt-6 max-w-2xl text-3xl font-semibold tracking-tight text-balance text-fg sm:text-4xl">
+          <h2
+            id="cta-title"
+            className="mx-auto mt-6 max-w-2xl text-3xl font-semibold tracking-tight text-balance text-fg sm:text-4xl"
+          >
             Map your market today. Book meetings on autopilot — with you in control.
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-base text-muted">

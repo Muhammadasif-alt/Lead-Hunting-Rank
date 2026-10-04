@@ -1,55 +1,51 @@
-import { Brain, ChartLine, Repeat, Scale, Send, Target } from 'lucide-react';
-import type { Tone } from '@/lib/screens';
-import { MediaSplit } from '@/components/ui/MediaSplit';
-import SectionHeader from './SectionHeader';
+import { Brain, ChartLine, Repeat, Scale, Send, Target } from "lucide-react";
+import type { Tone } from "@/lib/screens";
+import HowItWorksVisual from "./HowItWorksVisual";
+import SectionHeader from "./SectionHeader";
 
 /** Each step is coloured by the product area that owns it (lib/screens.ts TONES). */
 const STEPS: { icon: typeof Target; title: string; tone: Tone; body: string }[] = [
   {
     icon: Target,
-    title: 'Goal',
-    tone: 'ai',
-    body: 'You set the objective, ICP, offer and rules — e.g. “Book 20 meetings with Austin landscapers.”',
+    title: "Goal",
+    tone: "ai",
+    body: "You set the objective, ICP, offer and rules — e.g. “Book 20 meetings with Austin landscapers.”",
   },
   {
     icon: Brain,
-    title: 'Intelligence',
-    tone: 'leads',
-    body: 'Agents discover companies, research them and capture buying signals — facts kept separate from inference.',
+    title: "Intelligence",
+    tone: "leads",
+    body: "Agents discover companies, research them and capture buying signals — facts kept separate from inference.",
   },
   {
     icon: Scale,
-    title: 'Decision',
-    tone: 'system',
-    body: 'AI proposes the next best action; the deterministic policy engine decides to act, ask, wait or block.',
+    title: "Decision",
+    tone: "system",
+    body: "AI proposes the next best action; the deterministic policy engine decides to act, ask, wait or block.",
   },
   {
     icon: Send,
-    title: 'Action',
-    tone: 'email',
-    body: 'Approved outreach runs with idempotency, suppression checks and send limits on every side effect.',
+    title: "Action",
+    tone: "email",
+    body: "Approved outreach runs with idempotency, suppression checks and send limits on every side effect.",
   },
   {
     icon: ChartLine,
-    title: 'Outcome',
-    tone: 'sales',
-    body: 'Replies are classified, conversations qualified and meetings booked with full context for your team.',
+    title: "Outcome",
+    tone: "sales",
+    body: "Replies are classified, conversations qualified and meetings booked with full context for your team.",
   },
   {
     icon: Repeat,
-    title: 'Learning',
-    tone: 'insight',
-    body: 'Results feed back into memory — which ICP, signal, message and timing actually work, and who not to contact.',
+    title: "Learning",
+    tone: "insight",
+    body: "Results feed back into memory — which ICP, signal, message and timing actually work, and who not to contact.",
   },
 ];
 
 export default function HowItWorks() {
   return (
-    <section
-      id="how-it-works"
-      aria-labelledby="how-title"
-      className="scroll-mt-16 border-t border-line py-24"
-    >
+    <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-16 border-t border-line py-24">
       <div className="mx-auto max-w-page px-4 sm:px-6 lg:px-8">
         <SectionHeader
           id="how-title"
@@ -59,11 +55,8 @@ export default function HowItWorks() {
         />
 
         <div className="mt-16">
-          <MediaSplit
-            src="/images/how-it-works-planning.jpg"
-            alt="Two colleagues mapping a sales plan on a whiteboard"
-            minHeight={420}
-          >
+          <div className="grid items-center gap-10 lg:grid-cols-2 lg:gap-8">
+            <HowItWorksVisual />
             <ol className="grid gap-4 sm:grid-cols-2">
               {STEPS.map(({ icon: Icon, title, tone, body }, i) => (
                 <li key={title} data-tone={tone} className="card p-5">
@@ -80,7 +73,7 @@ export default function HowItWorks() {
                 </li>
               ))}
             </ol>
-          </MediaSplit>
+          </div>
         </div>
       </div>
     </section>

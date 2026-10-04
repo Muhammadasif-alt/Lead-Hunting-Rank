@@ -51,8 +51,7 @@ export default function Footer() {
           <div className="lg:col-span-2">
             <Logo />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">
-              The AI Sales Operating System — from market discovery to booked meetings, with policy-controlled
-              autonomy.
+              The AI Sales Operating System — from market discovery to booked meetings, with policy-controlled autonomy.
             </p>
           </div>
 

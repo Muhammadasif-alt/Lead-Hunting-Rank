@@ -7,60 +7,60 @@ import {
   MessagesSquare,
   PenLine,
   Telescope,
-} from 'lucide-react';
-import type { Tone } from '@/lib/screens';
-import { MediaSplit } from '@/components/ui/MediaSplit';
-import SectionHeader from './SectionHeader';
+} from "lucide-react";
+import type { Tone } from "@/lib/screens";
+import { MediaSplit } from "@/components/ui/MediaSplit";
+import SectionHeader from "./SectionHeader";
 
 /** Icon chips use the product's area colour code (lib/screens.ts TONES). */
 const AGENTS: { icon: typeof Telescope; name: string; tone: Tone; body: string }[] = [
   {
     icon: FileSearch,
-    name: 'Research',
-    tone: 'leads',
-    body: 'Builds an evidence-backed brief on each company.',
+    name: "Research",
+    tone: "leads",
+    body: "Builds an evidence-backed brief on each company.",
   },
   {
     icon: Telescope,
-    name: 'Prospecting',
-    tone: 'leads',
-    body: 'Finds the right person and a real reason to contact.',
+    name: "Prospecting",
+    tone: "leads",
+    body: "Finds the right person and a real reason to contact.",
   },
   {
     icon: PenLine,
-    name: 'Copy',
-    tone: 'email',
-    body: 'Writes personalization grounded only in verified facts.',
+    name: "Copy",
+    tone: "email",
+    body: "Writes personalization grounded only in verified facts.",
   },
   {
     icon: MessagesSquare,
-    name: 'Conversation',
-    tone: 'email',
-    body: 'Handles replies in context of the full account history.',
+    name: "Conversation",
+    tone: "email",
+    body: "Handles replies in context of the full account history.",
   },
   {
     icon: ListChecks,
-    name: 'Qualification',
-    tone: 'sales',
-    body: 'Tracks need, timeline, budget signals and fit.',
+    name: "Qualification",
+    tone: "sales",
+    body: "Tracks need, timeline, budget signals and fit.",
   },
   {
     icon: Handshake,
-    name: 'Objection',
-    tone: 'sales',
-    body: 'Responds to concerns — or escalates sensitive ones.',
+    name: "Objection",
+    tone: "sales",
+    body: "Responds to concerns — or escalates sensitive ones.",
   },
   {
     icon: CalendarCheck,
-    name: 'Scheduling',
-    tone: 'sales',
-    body: 'Books the meeting and hands over a context brief.',
+    name: "Scheduling",
+    tone: "sales",
+    body: "Books the meeting and hands over a context brief.",
   },
   {
     icon: ChartLine,
-    name: 'Sales Intelligence',
-    tone: 'insight',
-    body: 'Finds what works and what to stop doing.',
+    name: "Sales Intelligence",
+    tone: "insight",
+    body: "Finds what works and what to stop doing.",
   },
 ];
 

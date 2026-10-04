@@ -26,7 +26,14 @@ export function MediaSplit({
   return (
     <div className="grid items-stretch gap-6 lg:grid-cols-2 lg:gap-8">
       <div className={`relative overflow-hidden bg-raised ${reverse ? "lg:order-2" : ""}`} style={{ minHeight }}>
-        <Image src={src} alt={alt} fill sizes="(min-width: 1024px) 50vw, 100vw" className="object-cover" style={{ objectPosition: focus }} />
+        <Image
+          src={src}
+          alt={alt}
+          fill
+          sizes="(min-width: 1024px) 50vw, 100vw"
+          className="object-cover"
+          style={{ objectPosition: focus }}
+        />
       </div>
       <div className="flex min-w-0 flex-col justify-center">{children}</div>
     </div>

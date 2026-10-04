@@ -16,8 +16,14 @@ export default function Hero() {
         aria-hidden="true"
         className="bg-grid pointer-events-none absolute inset-0 -z-10 [mask-image:radial-gradient(ellipse_80%_70%_at_30%_10%,black,transparent)]"
       />
-      <div aria-hidden="true" className="pointer-events-none absolute -top-40 left-[10%] -z-10 h-[480px] w-[720px] max-w-[140vw] rounded-full bg-brand/12 blur-3xl" />
-      <div aria-hidden="true" className="pointer-events-none absolute top-24 right-0 -z-10 h-[420px] w-[560px] rounded-full bg-accent/10 blur-3xl" />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -top-40 left-[10%] -z-10 h-[480px] w-[720px] max-w-[140vw] rounded-full bg-brand/12 blur-3xl"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute top-24 right-0 -z-10 h-[420px] w-[560px] rounded-full bg-accent/10 blur-3xl"
+      />
 
       <div className="mx-auto grid max-w-page items-center gap-12 px-4 pt-14 pb-20 sm:px-6 sm:pt-20 lg:px-8 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] xl:gap-12 xl:pt-16 xl:pb-24">
         <div className="text-center xl:text-left">
@@ -34,9 +40,9 @@ export default function Hero() {
           </h1>
 
           <p className="mx-auto mt-6 max-w-xl text-base leading-relaxed text-pretty text-muted sm:text-lg xl:mx-0">
-            Rank High Lead maps your entire local market, researches each business with evidence, and runs
-            personalized outreach through to booked meetings — while a deterministic policy engine keeps you in
-            control of every action.
+            Rank High Lead maps your entire local market, researches each business with evidence, and runs personalized
+            outreach through to booked meetings — while a deterministic policy engine keeps you in control of every
+            action.
           </p>
 
           <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row sm:justify-center xl:justify-start">

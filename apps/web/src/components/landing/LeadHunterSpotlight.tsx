@@ -28,13 +28,41 @@ const FILTERS = [
 ];
 
 const PIPELINE = [
-  { icon: MapPin, title: "Market discovery", body: "Territory + industry across multiple permitted sources" },
-  { icon: GitMerge, title: "Resolution & dedupe", body: "Records merged into one canonical business" },
-  { icon: Globe, title: "Website & social", body: "Website, Facebook, Instagram, LinkedIn found or ruled out" },
-  { icon: UserSearch, title: "Owner & decision maker", body: "Who runs the business and their role" },
-  { icon: BadgeCheck, title: "Contact verification", body: "Business emails and phones checked before use" },
-  { icon: Gauge, title: "Digital presence audit", body: "Site quality, mobile, booking, chat, reviews" },
-  { icon: Lightbulb, title: "Opportunity detection", body: "No website, weak SEO, slow review response…" },
+  {
+    icon: MapPin,
+    title: "Market discovery",
+    body: "Territory + industry across multiple permitted sources",
+  },
+  {
+    icon: GitMerge,
+    title: "Resolution & dedupe",
+    body: "Records merged into one canonical business",
+  },
+  {
+    icon: Globe,
+    title: "Website & social",
+    body: "Website, Facebook, Instagram, LinkedIn found or ruled out",
+  },
+  {
+    icon: UserSearch,
+    title: "Owner & decision maker",
+    body: "Who runs the business and their role",
+  },
+  {
+    icon: BadgeCheck,
+    title: "Contact verification",
+    body: "Business emails and phones checked before use",
+  },
+  {
+    icon: Gauge,
+    title: "Digital presence audit",
+    body: "Site quality, mobile, booking, chat, reviews",
+  },
+  {
+    icon: Lightbulb,
+    title: "Opportunity detection",
+    body: "No website, weak SEO, slow review response…",
+  },
   { icon: Target, title: "ICP scoring", body: "Ranked by fit and timing, with the reason stored" },
 ];
 
@@ -80,15 +108,15 @@ export default function LeadHunterSpotlight() {
             <li className="flex gap-3">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-accent" aria-hidden="true" />
               <span>
-                <span className="text-fg">Honest coverage confidence.</span> You see sources searched, queries
-                exhausted and an estimated coverage level — never a fake “100%”.
+                <span className="text-fg">Honest coverage confidence.</span> You see sources searched, queries exhausted
+                and an estimated coverage level — never a fake “100%”.
               </span>
             </li>
             <li className="flex gap-3">
               <span className="mt-1.5 size-1.5 shrink-0 rounded-full bg-amber" aria-hidden="true" />
               <span>
-                <span className="text-fg">No website is a signal, not a dead end.</span> Businesses without a site
-                are kept and flagged as opportunities.
+                <span className="text-fg">No website is a signal, not a dead end.</span> Businesses without a site are
+                kept and flagged as opportunities.
               </span>
             </li>
           </ul>
