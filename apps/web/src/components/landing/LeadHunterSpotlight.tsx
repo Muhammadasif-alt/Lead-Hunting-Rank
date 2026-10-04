@@ -21,7 +21,6 @@ import {
   UserRound,
   Zap,
 } from "lucide-react";
-import LeadHunterVisual from "./LeadHunterVisual";
 
 const MODES = [
   { icon: Zap, name: "Quick Scan", body: "Fast results from the strongest sources.", tag: "Minutes", tone: "text-[#ea580c] bg-[#fff1e8]" },
@@ -81,7 +80,7 @@ export default function LeadHunterSpotlight() {
   return (
     <section id="lead-hunter" aria-labelledby="lead-hunter-title" className="relative isolate scroll-mt-16 overflow-hidden border-t border-line py-24">
       <div aria-hidden="true" className="bg-grid pointer-events-none absolute inset-0 -z-10 opacity-60 [mask-image:radial-gradient(ellipse_60%_60%_at_20%_20%,black,transparent)]" />
-      <div className="mx-auto grid max-w-page items-start gap-12 px-4 sm:px-6 lg:grid-cols-2 lg:px-8 2xl:grid-cols-[minmax(0,0.92fr)_minmax(0,1.3fr)_minmax(0,0.78fr)] 2xl:gap-8">
+      <div className="mx-auto grid max-w-page items-start gap-12 px-4 sm:px-6 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)] lg:gap-x-10 lg:px-8">
         {/* copy */}
         <div>
           <p className="eyebrow">Lead Hunter</p>
@@ -155,35 +154,17 @@ export default function LeadHunterSpotlight() {
           </div>
         </div>
 
-        {/* dashboard illustration + pills */}
-        <div className="2xl:pt-10">
-          <LeadHunterVisual />
-          <ul className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-2">
-            {PILLS.map(({ icon: Icon, title, sub, tone }) => (
-              <li key={title} className="card flex items-center gap-2.5 p-3">
-                <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone}`}>
-                  <Icon className="size-[18px]" aria-hidden="true" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[13px] font-semibold leading-tight text-fg">{title}</p>
-                  <p className="text-[11px] text-muted">{sub}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-
         {/* enrichment pipeline */}
-        <div className="card p-6 lg:col-span-2 2xl:col-span-1">
+        <div className="card p-6">
           <div className="flex items-center justify-between">
             <p className="text-base font-semibold text-fg">Enrichment pipeline</p>
             <span className="rounded-full border border-line px-3 py-1 text-xs text-muted">Per business</span>
           </div>
-          <ol className="mt-6 grid gap-x-8 lg:grid-cols-2 2xl:grid-cols-1">
+          <ol className="mt-6">
             {PIPELINE.map(({ icon: Icon, title, body, count, tone }, i) => (
-              <li key={title} className="relative flex gap-3 pb-5 last:pb-0 lg:[&:nth-last-child(2)]:pb-0 2xl:[&:nth-last-child(2)]:pb-5">
+              <li key={title} className="relative flex gap-3 pb-5 last:pb-0">
                 {i < PIPELINE.length - 1 && (
-                  <span aria-hidden="true" className="absolute top-11 bottom-1 left-[21px] border-l-2 border-dashed border-brand/30 lg:hidden 2xl:block" />
+                  <span aria-hidden="true" className="absolute top-11 bottom-1 left-[21px] border-l-2 border-dashed border-brand/30" />
                 )}
                 <span className="relative grid size-11 shrink-0 place-items-center rounded-full border border-brand/20 bg-brand-soft text-brand">
                   <Icon className="size-5" aria-hidden="true" />
@@ -210,6 +191,21 @@ export default function LeadHunterSpotlight() {
             Then: prioritization → outreach → conversation → meeting.
           </div>
         </div>
+
+        {/* pills */}
+        <ul className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2 lg:col-span-2 lg:grid-cols-4">
+          {PILLS.map(({ icon: Icon, title, sub, tone }) => (
+            <li key={title} className="card flex items-center gap-2.5 p-3">
+              <span className={`grid size-9 shrink-0 place-items-center rounded-lg ${tone}`}>
+                <Icon className="size-[18px]" aria-hidden="true" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-[13px] font-semibold leading-tight text-fg">{title}</p>
+                <p className="text-[11px] text-muted">{sub}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
       </div>
     </section>
   );

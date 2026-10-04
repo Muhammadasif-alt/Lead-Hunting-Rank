@@ -1,5 +1,5 @@
 import { Ban, Hand, Hourglass, OctagonX, Play, Power, ScrollText, ShieldCheck } from "lucide-react";
-import { MediaSplit } from "@/components/ui/MediaSplit";
+import LeadHunterVisual from "./LeadHunterVisual";
 import SectionHeader from "./SectionHeader";
 
 const DECISIONS = [
@@ -117,8 +117,9 @@ export default function Safety() {
             </div>
           </div>
 
-          {/* guardrails, beside a photo */}
-          <MediaSplit src="/images/safety-dashboard.jpg" alt="Someone reviewing a dashboard of results on a laptop">
+          {/* guardrails, beside the market dashboard illustration */}
+          <div className="grid items-center gap-8 lg:grid-cols-2">
+            <LeadHunterVisual />
             <ul className="grid gap-4">
               {GUARDRAILS.map(({ icon: Icon, title, body }) => (
                 <li key={title} className="card flex gap-4 p-5">
@@ -132,7 +133,7 @@ export default function Safety() {
                 </li>
               ))}
             </ul>
-          </MediaSplit>
+          </div>
         </div>
       </div>
     </section>
