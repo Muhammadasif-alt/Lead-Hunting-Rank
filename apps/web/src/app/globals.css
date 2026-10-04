@@ -2,40 +2,41 @@
 
 /*
  * Rank High Lead — design tokens.
- * Neutral near-black surfaces; brand accents come from the logo (green / blue / amber).
+ * Light theme: off-white canvas, white cards, near-black text, deep green brand.
+ * Accent hues come from the logo (green / blue / amber), darkened for contrast on white.
  * Use the Tailwind utilities these generate: bg-surface, text-muted, border-line, text-brand, …
  */
 @theme {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
-  --color-canvas: #08090a;
-  --color-surface: #0f1113;
-  --color-raised: #15181b;
-  --color-hover: #1b1f23;
-  --color-line: #23272c;
-  --color-line-strong: #31363d;
+  --color-canvas: #f7f8f7;
+  --color-surface: #ffffff;
+  --color-raised: #f3f5f4;
+  --color-hover: #eceeed;
+  --color-line: #e6e9e7;
+  --color-line-strong: #d4d9d6;
 
-  --color-fg: #edeef0;
-  --color-muted: #9298a1;
-  --color-faint: #636973;
+  --color-fg: #0e1411;
+  --color-muted: #59615d;
+  --color-faint: #8a928e;
 
-  --color-brand: #22d14a;
-  --color-brand-strong: #1cb33f;
-  --color-brand-soft: rgb(34 209 74 / 0.12);
-  --color-accent: #1d8fff;
-  --color-accent-soft: rgb(29 143 255 / 0.12);
-  --color-amber: #ffbd2e;
-  --color-amber-soft: rgb(255 189 46 / 0.12);
-  --color-danger: #f2555a;
-  --color-danger-soft: rgb(242 85 90 / 0.12);
+  --color-brand: #128a43;
+  --color-brand-strong: #0b6b34;
+  --color-brand-soft: rgb(18 138 67 / 0.09);
+  --color-accent: #1767d6;
+  --color-accent-soft: rgb(23 103 214 / 0.08);
+  --color-amber: #b26b00;
+  --color-amber-soft: rgb(255 189 46 / 0.18);
+  --color-danger: #d42a36;
+  --color-danger-soft: rgb(212 42 54 / 0.08);
 
-  --radius-card: 14px;
-  --shadow-card: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 8px 24px -12px rgb(0 0 0 / 0.6);
+  --radius-card: 16px;
+  --shadow-card: 0 1px 2px rgb(16 24 20 / 0.04), 0 8px 24px -12px rgb(16 24 20 / 0.1);
 }
 
 html {
-  color-scheme: dark;
+  color-scheme: light;
 }
 
 body {
@@ -46,7 +47,7 @@ body {
 }
 
 ::selection {
-  background: rgb(34 209 74 / 0.3);
+  background: rgb(18 138 67 / 0.18);
 }
 
 :focus-visible {
@@ -70,8 +71,8 @@ body {
     justify-content: center;
     gap: 0.5rem;
     height: 2.25rem;
-    padding: 0 0.875rem;
-    border-radius: 9px;
+    padding: 0 1rem;
+    border-radius: 999px;
     font-size: 0.875rem;
     font-weight: 500;
     white-space: nowrap;
@@ -82,17 +83,19 @@ body {
     cursor: not-allowed;
   }
   .btn-primary {
-    background: var(--color-brand);
-    color: #04140a;
+    background: var(--color-brand-strong);
+    color: #ffffff;
     font-weight: 600;
+    box-shadow: 0 6px 16px -6px rgb(11 107 52 / 0.55);
   }
   .btn-primary:hover:not(:disabled) {
-    background: #3ee064;
+    background: #095a2c;
   }
   .btn-secondary {
-    background: var(--color-raised);
-    border: 1px solid var(--color-line-strong);
+    background: var(--color-surface);
+    border: 1px solid var(--color-line);
     color: var(--color-fg);
+    box-shadow: 0 1px 2px rgb(16 24 20 / 0.05);
   }
   .btn-secondary:hover:not(:disabled) {
     background: var(--color-hover);
@@ -115,7 +118,7 @@ body {
     width: 100%;
     border-radius: 9px;
     border: 1px solid var(--color-line-strong);
-    background: var(--color-canvas);
+    background: var(--color-surface);
     padding: 0 0.75rem;
     font-size: 0.875rem;
     color: var(--color-fg);
@@ -138,7 +141,8 @@ body {
     border-radius: 999px;
     font-size: 0.75rem;
     font-weight: 500;
-    border: 1px solid var(--color-line-strong);
+    border: 1px solid var(--color-line);
+    background: var(--color-surface);
     color: var(--color-muted);
     white-space: nowrap;
   }
@@ -151,16 +155,14 @@ body {
     color: var(--color-brand);
   }
 
-  /* Subtle grid backdrop used on the landing page */
+  /* Subtle dotted backdrop used on the landing page */
   .bg-grid {
-    background-image:
-      linear-gradient(to right, rgb(255 255 255 / 0.04) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(255 255 255 / 0.04) 1px, transparent 1px);
-    background-size: 56px 56px;
+    background-image: radial-gradient(rgb(16 24 20 / 0.12) 1px, transparent 1px);
+    background-size: 22px 22px;
   }
 
   .text-gradient {
-    background: linear-gradient(90deg, var(--color-brand) 0%, var(--color-accent) 100%);
+    background: linear-gradient(90deg, var(--color-brand) 0%, #1aa553 100%);
     -webkit-background-clip: text;
     background-clip: text;
     color: transparent;

@@ -24,7 +24,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {menuOpen && (
         <div className="fixed inset-0 z-40 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
-          <div className="absolute inset-0 bg-black/60" onClick={() => setMenuOpen(false)} />
+          <div className="absolute inset-0 bg-black/30" onClick={() => setMenuOpen(false)} />
           <div className="absolute inset-y-0 left-0 w-72 border-r border-line bg-surface shadow-2xl">
             <button
               type="button"
