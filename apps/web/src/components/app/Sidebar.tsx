@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ChevronsUpDown } from "lucide-react";
 import { Logo } from "@/components/brand/Logo";
-import { SCREEN_GROUPS, SCREENS } from "@/lib/screens";
+import { SCREEN_GROUPS, SCREENS, TONE_ORDER, TONES } from "@/lib/screens";
 
 export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
@@ -34,16 +34,20 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
                 const active = pathname === s.href || pathname.startsWith(`${s.href}/`);
                 const Icon = s.icon;
                 return (
-                  <li key={s.href}>
+                  <li key={s.href} data-tone={s.tone}>
                     <Link
                       href={s.href}
                       onClick={onNavigate}
                       aria-current={active ? "page" : undefined}
-                      className={`group flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
-                        active ? "bg-hover text-fg" : "text-muted hover:bg-hover/60 hover:text-fg"
+                      title={`${s.title} · ${TONES[s.tone].label}`}
+                      className={`group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-sm transition-colors ${
+                        active ? "bg-tone-soft font-medium text-fg" : "text-muted hover:bg-hover/60 hover:text-fg"
                       }`}
                     >
-                      <Icon className={`size-4 shrink-0 ${active ? "text-brand" : "text-faint group-hover:text-muted"}`} />
+                      {active && (
+                        <span aria-hidden="true" className="absolute inset-y-1.5 -left-3 w-[3px] rounded-r-full bg-tone" />
+                      )}
+                      <Icon className={`size-4 shrink-0 text-tone ${active ? "" : "opacity-75 group-hover:opacity-100"}`} />
                       <span className="truncate">{s.title}</span>
                     </Link>
                   </li>
@@ -53,6 +57,19 @@ export function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
           </div>
         ))}
       </nav>
+
+      {/* Colour code legend — teaches new team members what each tone means. */}
+      <div className="border-t border-line px-4 py-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-faint">Colour code</div>
+        <ul className="mt-2 grid grid-cols-3 gap-x-2 gap-y-1.5">
+          {TONE_ORDER.map((t) => (
+            <li key={t} data-tone={t} className="flex items-center gap-1.5 text-[11px] text-muted" title={`${TONES[t].label} — ${TONES[t].description}`}>
+              <span className="size-2 shrink-0 rounded-full bg-tone" />
+              <span className="truncate">{TONES[t].short}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

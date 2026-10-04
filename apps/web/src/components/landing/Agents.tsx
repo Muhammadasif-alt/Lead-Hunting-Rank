@@ -8,17 +8,19 @@ import {
   PenLine,
   Telescope,
 } from "lucide-react";
+import type { Tone } from "@/lib/screens";
 import SectionHeader from "./SectionHeader";
 
-const AGENTS = [
-  { icon: FileSearch, name: "Research", body: "Builds an evidence-backed brief on each company." },
-  { icon: Telescope, name: "Prospecting", body: "Finds the right person and a real reason to contact." },
-  { icon: PenLine, name: "Copy", body: "Writes personalization grounded only in verified facts." },
-  { icon: MessagesSquare, name: "Conversation", body: "Handles replies in context of the full account history." },
-  { icon: ListChecks, name: "Qualification", body: "Tracks need, timeline, budget signals and fit." },
-  { icon: Handshake, name: "Objection", body: "Responds to concerns — or escalates sensitive ones." },
-  { icon: CalendarCheck, name: "Scheduling", body: "Books the meeting and hands over a context brief." },
-  { icon: ChartLine, name: "Sales Intelligence", body: "Finds what works and what to stop doing." },
+/** Icon chips use the product's area colour code (lib/screens.ts TONES). */
+const AGENTS: { icon: typeof Telescope; name: string; tone: Tone; body: string }[] = [
+  { icon: FileSearch, name: "Research", tone: "leads", body: "Builds an evidence-backed brief on each company." },
+  { icon: Telescope, name: "Prospecting", tone: "leads", body: "Finds the right person and a real reason to contact." },
+  { icon: PenLine, name: "Copy", tone: "email", body: "Writes personalization grounded only in verified facts." },
+  { icon: MessagesSquare, name: "Conversation", tone: "email", body: "Handles replies in context of the full account history." },
+  { icon: ListChecks, name: "Qualification", tone: "sales", body: "Tracks need, timeline, budget signals and fit." },
+  { icon: Handshake, name: "Objection", tone: "sales", body: "Responds to concerns — or escalates sensitive ones." },
+  { icon: CalendarCheck, name: "Scheduling", tone: "sales", body: "Books the meeting and hands over a context brief." },
+  { icon: ChartLine, name: "Sales Intelligence", tone: "insight", body: "Finds what works and what to stop doing." },
 ];
 
 export default function Agents() {
@@ -33,12 +35,13 @@ export default function Agents() {
         />
 
         <ul className="mt-16 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {AGENTS.map(({ icon: Icon, name, body }) => (
+          {AGENTS.map(({ icon: Icon, name, tone, body }) => (
             <li
               key={name}
+              data-tone={tone}
               className="card flex items-start gap-4 p-5 transition-colors hover:border-line-strong"
             >
-              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-tone-soft text-tone">
                 <Icon className="size-[18px]" aria-hidden="true" />
               </span>
               <div>

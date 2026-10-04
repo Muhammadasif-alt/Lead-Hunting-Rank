@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, Search } from "lucide-react";
-import { SCREENS } from "@/lib/screens";
+import { SCREENS, screenForPath } from "@/lib/screens";
 
 /** Quick navigation: filters screens as you type; ⌘K / Ctrl+K focuses it. */
 function ScreenSearch() {
@@ -74,7 +74,7 @@ function ScreenSearch() {
           {results.map((s, i) => {
             const Icon = s.icon;
             return (
-              <li key={s.href} role="option" aria-selected={i === active}>
+              <li key={s.href} role="option" aria-selected={i === active} data-tone={s.tone}>
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
@@ -84,7 +84,7 @@ function ScreenSearch() {
                     i === active ? "bg-hover" : ""
                   }`}
                 >
-                  <Icon className="size-4 text-faint" />
+                  <Icon className="size-4 text-tone" />
                   <span className="flex-1 text-fg">{s.title}</span>
                   <span className="text-xs text-faint">{s.group}</span>
                 </button>
@@ -99,7 +99,7 @@ function ScreenSearch() {
 
 export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
   const pathname = usePathname();
-  const screen = SCREENS.find((s) => pathname.startsWith(s.href));
+  const screen = screenForPath(pathname);
 
   return (
     <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-line bg-canvas/80 px-4 backdrop-blur-md sm:px-6">
@@ -109,6 +109,7 @@ export function Topbar({ onOpenMenu }: { onOpenMenu: () => void }) {
       <div className="hidden min-w-0 items-center gap-2 text-sm md:flex">
         <span className="text-faint">{screen?.group ?? "App"}</span>
         <span className="text-faint">/</span>
+        {screen && <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-tone" />}
         <span className="truncate font-medium">{screen?.title ?? ""}</span>
       </div>
       <div className="flex flex-1 justify-end md:justify-center">

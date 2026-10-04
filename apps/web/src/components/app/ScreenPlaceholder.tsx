@@ -13,15 +13,15 @@ export function ScreenPlaceholder({ href }: { href: string }) {
   const phasesAway = screen.phase === null ? 0 : screen.phase - CURRENT_PHASE;
 
   return (
-    <div className="space-y-8">
+    <div data-tone={screen.tone} className="space-y-8">
       <PageHeader screen={screen} />
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
         <section className="card relative overflow-hidden p-8">
-          <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-brand/10 blur-3xl" />
+          <div className="pointer-events-none absolute -right-24 -top-24 size-72 rounded-full bg-tone/10 blur-3xl" />
           <div className="relative">
-            <div className="grid size-12 place-items-center rounded-2xl border border-line-strong bg-raised">
-              <Icon className="size-6 text-muted" />
+            <div className="grid size-12 place-items-center rounded-2xl border border-tone/20 bg-tone-soft">
+              <Icon className="size-6 text-tone" />
             </div>
             <h2 className="mt-6 text-lg font-semibold tracking-tight">Nothing here yet — by design</h2>
             <p className="mt-2 max-w-lg text-sm leading-relaxed text-muted">
@@ -45,7 +45,9 @@ export function ScreenPlaceholder({ href }: { href: string }) {
           <ul className="mt-4 space-y-3">
             {screen.capabilities.map((c) => (
               <li key={c} className="flex gap-3 text-sm text-muted">
-                <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+                <span className="grid size-5 shrink-0 place-items-center rounded-full bg-tone-soft">
+                  <Check className="size-3 text-tone" />
+                </span>
                 <span>{c}</span>
               </li>
             ))}

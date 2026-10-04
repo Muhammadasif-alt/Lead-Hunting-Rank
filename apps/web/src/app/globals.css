@@ -6,7 +6,7 @@
  * Accent hues come from the logo (green / blue / amber), darkened for contrast on white.
  * Use the Tailwind utilities these generate: bg-surface, text-muted, border-line, text-brand, …
  */
-@theme {
+@theme static {
   --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), ui-monospace, monospace;
 
@@ -31,6 +31,27 @@
   --color-danger: #d42a36;
   --color-danger-soft: rgb(212 42 54 / 0.08);
 
+  /*
+   * Area tones — every functional area has its own identity colour (all AA on white).
+   * Pages set data-tone="<name>" and components use the generic tone utilities below.
+   */
+  --color-tone-leads: #128a43;
+  --color-tone-leads-soft: rgb(18 138 67 / 0.09);
+  --color-tone-email: #1767d6;
+  --color-tone-email-soft: rgb(23 103 214 / 0.08);
+  --color-tone-sales: #c2410c;
+  --color-tone-sales-soft: rgb(194 65 12 / 0.08);
+  --color-tone-ai: #7c3aed;
+  --color-tone-ai-soft: rgb(124 58 237 / 0.08);
+  --color-tone-insight: #0f766e;
+  --color-tone-insight-soft: rgb(15 118 110 / 0.08);
+  --color-tone-system: #475569;
+  --color-tone-system-soft: rgb(71 85 105 / 0.08);
+
+  /* Generic tone (defaults to brand) — overridden by [data-tone]. Use text-tone, bg-tone-soft, border-tone/30 … */
+  --color-tone: #128a43;
+  --color-tone-soft: rgb(18 138 67 / 0.09);
+
   --radius-card: 16px;
   --shadow-card: 0 1px 2px rgb(16 24 20 / 0.04), 0 8px 24px -12px rgb(16 24 20 / 0.1);
 }
@@ -50,8 +71,37 @@ body {
   background: rgb(18 138 67 / 0.18);
 }
 
+/* Each area tone re-points the generic tone variables. */
+[data-tone="leads"] {
+  --color-tone: var(--color-tone-leads);
+  --color-tone-soft: var(--color-tone-leads-soft);
+}
+[data-tone="email"] {
+  --color-tone: var(--color-tone-email);
+  --color-tone-soft: var(--color-tone-email-soft);
+}
+[data-tone="sales"] {
+  --color-tone: var(--color-tone-sales);
+  --color-tone-soft: var(--color-tone-sales-soft);
+}
+[data-tone="ai"] {
+  --color-tone: var(--color-tone-ai);
+  --color-tone-soft: var(--color-tone-ai-soft);
+}
+[data-tone="insight"] {
+  --color-tone: var(--color-tone-insight);
+  --color-tone-soft: var(--color-tone-insight-soft);
+}
+[data-tone="system"] {
+  --color-tone: var(--color-tone-system);
+  --color-tone-soft: var(--color-tone-system-soft);
+}
+[data-tone] {
+  --focus-ring: var(--color-tone);
+}
+
 :focus-visible {
-  outline: 2px solid var(--color-accent);
+  outline: 2px solid var(--focus-ring, var(--color-accent));
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -129,7 +179,7 @@ body {
   }
   .input:focus {
     outline: none;
-    border-color: var(--color-accent);
+    border-color: var(--focus-ring, var(--color-accent));
   }
 
   .badge {
@@ -152,7 +202,7 @@ body {
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--color-brand);
+    color: var(--color-tone);
   }
 
   /* Subtle dotted backdrop used on the landing page */

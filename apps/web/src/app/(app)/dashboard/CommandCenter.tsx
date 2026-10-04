@@ -135,9 +135,16 @@ export function CommandCenter() {
           {upcomingScreens.map((s) => {
             const Icon = s.icon;
             return (
-              <Link key={s.href} href={s.href} className="card group p-5 transition-colors hover:border-line-strong">
+              <Link
+                key={s.href}
+                href={s.href}
+                data-tone={s.tone}
+                className="card group p-5 transition-colors hover:border-tone/30"
+              >
                 <div className="flex items-center justify-between">
-                  <Icon className="size-5 text-muted group-hover:text-brand" />
+                  <span className="grid size-9 place-items-center rounded-lg bg-tone-soft">
+                    <Icon className="size-[18px] text-tone" />
+                  </span>
                   <span className="badge">Phase {s.phase}</span>
                 </div>
                 <div className="mt-4 text-sm font-medium">{s.title}</div>
