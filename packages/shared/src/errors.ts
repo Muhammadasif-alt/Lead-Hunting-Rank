@@ -10,6 +10,7 @@ export const ERROR_CODES = {
   AUTHORITY_EXCEEDED: 403,
   RESOURCE_NOT_FOUND: 404,
   VERSION_CONFLICT: 409,
+  ALREADY_EXISTS: 409,
   IDEMPOTENCY_CONFLICT: 409,
   INVALID_STATE_TRANSITION: 422,
   SUPPRESSED: 422,
@@ -72,7 +73,7 @@ export class NotFoundError extends AppError {
 
 export class ConflictError extends AppError {
   constructor(
-    readonly code: 'VERSION_CONFLICT' | 'IDEMPOTENCY_CONFLICT',
+    readonly code: 'VERSION_CONFLICT' | 'IDEMPOTENCY_CONFLICT' | 'ALREADY_EXISTS',
     message: string,
     details?: ErrorDetail[],
   ) {

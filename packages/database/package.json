@@ -14,6 +14,8 @@
   "scripts": {
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:seed": "node dist/seed.js",
     "db:studio": "prisma studio",
     "build": "prisma generate && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
@@ -21,7 +23,8 @@
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
-    "@prisma/client": "^7.10.0"
+    "@prisma/client": "^7.10.0",
+    "@revenue-os/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24",

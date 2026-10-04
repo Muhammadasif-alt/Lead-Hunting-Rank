@@ -15,6 +15,8 @@ Product vision: [docs/00-vision.md](docs/00-vision.md) · Kahan tak pohanche: **
 pnpm install        # sab dependencies (poore monorepo ki ek hi dafa)
 pnpm setup          # .env banata hai + Node/Docker check karta hai
 pnpm infra:up       # PostgreSQL + Redis Docker mein start
+pnpm db:deploy       # database tables banata hai (migrations)
+pnpm db:seed         # dev workspace + owner user + roles + default pipeline
 pnpm dev            # web + api + worker ek saath start
 ```
 
@@ -71,8 +73,10 @@ aur lambe kaam: **api → Redis/BullMQ queue → worker → result → PostgreSQ
 | `pnpm infra:up` / `infra:down` / `infra:logs` | Docker Postgres + Redis |
 | `pnpm build` | Sab build |
 | `pnpm typecheck` | TypeScript errors check |
-| `pnpm test` | Saare unit tests |
-| `pnpm db:migrate` | Prisma migration banao/chalao |
+| `pnpm test` | Saare tests (database tests `revenue_os_test` DB khud bana lete hain — Docker chalna chahiye) |
+| `pnpm db:migrate` | Schema badla? Nayi Prisma migration banao + chalao |
+| `pnpm db:deploy` | Maujooda migrations database pe lagao (pull ke baad) |
+| `pnpm db:seed` | Dev data: workspace, owner, roles, pipeline (dobara chalana safe hai) |
 | `pnpm db:studio` | Database browser mein dekho |
 | `pnpm format` | Code format (Prettier) |
 

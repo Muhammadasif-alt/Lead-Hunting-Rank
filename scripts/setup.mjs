@@ -29,5 +29,7 @@ try {
 console.log('\nNext steps:');
 if (!dockerReady) console.log('  0. Start Docker Desktop');
 console.log('  1. pnpm infra:up     # starts PostgreSQL + Redis in Docker');
-console.log('  2. pnpm dev          # starts web (3000) + api (4000) + worker');
-console.log('  3. open http://localhost:3000/diagnostics — all five rows should be ✓\n');
+console.log('  2. pnpm db:deploy    # creates the database tables (migrations)');
+console.log('  3. pnpm db:seed      # dev workspace, owner user, roles, default pipeline');
+console.log('  4. pnpm dev          # starts web (3000) + api (4000) + worker');
+console.log('  5. open http://localhost:3000/diagnostics — all five rows should be ✓\n');

@@ -1,7 +1,12 @@
-// Revenue OS — master data model.
-// Models are added incrementally per docs/06-tech-spec-2-database.md.
-// Phase 2 (Database Foundation) starts with: Workspace, User, Role, Permission, UserRole, AuthorityLimit,
-// then DomainEvent / OutboxEvent / AuditLog / ExternalAction / InboundEvent, then the CRM core.
+// Revenue OS — master data model (docs/06-tech-spec-2-database.md).
+// Built incrementally in the locked order: Foundation → CRM Core → Discovery → … (§ Database Build Order).
+//
+// Conventions (docs/06 §3):
+// - UUID ids, UTC timestamps, `version` for optimistic concurrency, `archivedAt` instead of hard deletes.
+// - Every business row carries `workspaceId`. Child rows reference parents through composite
+//   (workspaceId, id) foreign keys, so a row can never point at another workspace's data — enforced by Postgres.
+// - Polymorphic references use (entityType, entityId) as the spec defines; services validate them.
+// - Facts, evidence and AI output stay separate. Money = amount_minor + currency (none yet).
 
 generator client {
   provider               = "prisma-client"
@@ -13,4 +18,821 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ───────────────────────────── shared enums ─────────────────────────────
+
+enum ActorType {
+  HUMAN
+  AI_AGENT
+  SYSTEM
+  API_CLIENT
+  INTEGRATION
+}
+
+enum ConfidenceLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum EntityType {
+  WORKSPACE
+  USER
+  COMPANY
+  PERSON
+  EMPLOYMENT
+  CONTACT_POINT
+  EVIDENCE
+  FACT
+}
+
+// ───────────────────────── 01 Identity & Workspace ─────────────────────────
+
+enum WorkspaceStatus {
+  ACTIVE
+  SUSPENDED
+  ARCHIVED
+}
+
+model Workspace {
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String
+  slug            String          @unique
+  defaultTimezone String          @default("UTC")
+  currency        String          @default("USD") @db.Char(3)
+  language        String          @default("en")
+  status          WorkspaceStatus @default(ACTIVE)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  archivedAt      DateTime?       @db.Timestamptz(3)
+  version         Int             @default(1)
+
+  members                WorkspaceMember[]
+  roles                  Role[]
+  authorityLimits        AuthorityLimit[]
+  companies              Company[]
+  companyAliases         CompanyAlias[]
+  externalEntityMappings ExternalEntityMapping[]
+  people                 Person[]
+  employments            Employment[]
+  contactPoints          ContactPoint[]
+  contactVerifications   ContactVerification[]
+  evidence               Evidence[]
+  facts                  Fact[]
+  factEvidence           FactEvidence[]
+  pipelines              Pipeline[]
+  pipelineStages         PipelineStage[]
+  policies               Policy[]
+  policyRules            PolicyRule[]
+  auditLogs              AuditLog[]
+  domainEvents           DomainEvent[]
+  outboxEvents           OutboxEvent[]
+  externalActions        ExternalAction[]
+  inboundEvents          InboundEvent[]
+}
+
+enum UserStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  DISABLED
+}
+
+/**
+ * A person who can sign in. Global across workspaces; access comes from WorkspaceMember. Never hard-deleted.
+ */
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  email        String     @unique
+  name         String
+  status       UserStatus @default(INVITED)
+  timezone     String?
+  locale       String?
+  lastActiveAt DateTime?  @db.Timestamptz(3)
+  createdAt    DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @db.Timestamptz(3)
+  version      Int        @default(1)
+
+  memberships WorkspaceMember[]
+}
+
+enum MemberStatus {
+  INVITED
+  ACTIVE
+  SUSPENDED
+  REMOVED
+}
+
+model WorkspaceMember {
+  id          String       @id @default(uuid()) @db.Uuid
+  workspaceId String       @db.Uuid
+  userId      String       @db.Uuid
+  status      MemberStatus @default(ACTIVE)
+  joinedAt    DateTime     @default(now()) @db.Timestamptz(3)
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime     @updatedAt @db.Timestamptz(3)
+  version     Int          @default(1)
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  user            User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  roles           UserRole[]
+  authorityLimits AuthorityLimit[]
+
+  @@unique([workspaceId, userId])
+  @@unique([workspaceId, id])
+  @@index([userId])
+}
+
+enum RoleKey {
+  OWNER
+  ADMIN
+  SALES
+  RESEARCHER
+  VIEWER
+}
+
+/**
+ * Roles are per workspace so each workspace can tune grants without touching others.
+ */
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  key         RoleKey
+  name        String
+  description String?
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  version     Int      @default(1)
+
+  workspace       Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  permissions     RolePermission[]
+  userRoles       UserRole[]
+  authorityLimits AuthorityLimit[]
+
+  @@unique([workspaceId, key])
+  @@unique([workspaceId, id])
+}
+
+enum ActionClass {
+  A
+  B
+  C
+  D
+  E
+}
+
+/**
+ * Global permission catalog (keys mirror @revenue-os/shared PERMISSIONS).
+ */
+model Permission {
+  id          String      @id @default(uuid()) @db.Uuid
+  key         String      @unique
+  description String
+  actionClass ActionClass
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+
+  roles RolePermission[]
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+enum PermissionScope {
+  OWN
+  ASSIGNED
+  TEAM
+  WORKSPACE
+}
+
+model RolePermission {
+  roleId       String           @db.Uuid
+  permissionId String           @db.Uuid
+  effect       PermissionEffect @default(ALLOW)
+  scope        PermissionScope  @default(WORKSPACE)
+  createdAt    DateTime         @default(now()) @db.Timestamptz(3)
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Restrict)
+
+  @@id([roleId, permissionId])
+}
+
+model UserRole {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  memberId    String   @db.Uuid
+  roleId      String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  createdBy   String?  @db.Uuid
+
+  member WorkspaceMember @relation(fields: [workspaceId, memberId], references: [workspaceId, id], onDelete: Cascade)
+  role   Role            @relation(fields: [workspaceId, roleId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@unique([memberId, roleId])
+  @@index([workspaceId])
+}
+
+enum AuthorityUnit {
+  PERCENT
+  COUNT
+  MINOR_CURRENCY
+}
+
+/**
+ * Authority ≠ permission (docs/10 §48-55): pricing.discount may be granted, but only up to max_discount_percent.
+ * Applies to a role, or overrides for one member. `maxValue = null` means unlimited.
+ */
+model AuthorityLimit {
+  id          String        @id @default(uuid()) @db.Uuid
+  workspaceId String        @db.Uuid
+  roleId      String?       @db.Uuid
+  memberId    String?       @db.Uuid
+  key         String
+  maxValue    Decimal?      @db.Decimal(18, 4)
+  unit        AuthorityUnit
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
+  version     Int           @default(1)
+
+  // Prisma can't express a composite FK with a nullable part, so role/member use plain FKs here; a CHECK in the
+  // migration enforces exactly one of roleId/memberId, and the unique index is NULLS NOT DISTINCT.
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  role      Role?            @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  member    WorkspaceMember? @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, roleId, memberId, key])
+}
+
+// ───────────────────────────── 03 Company & People ─────────────────────────────
+
+enum CompanyStatus {
+  DISCOVERED
+  RESEARCHING
+  ACTIVE
+  CUSTOMER
+  FORMER_CUSTOMER
+  DISQUALIFIED
+  ARCHIVED
+}
+
+/**
+ * Canonical business entity. Status is lifecycle, never a deal stage (docs/06 §15-21).
+ */
+model Company {
+  id             String        @id @default(uuid()) @db.Uuid
+  workspaceId    String        @db.Uuid
+  displayName    String
+  legalName      String?
+  normalizedName String
+  websiteDomain  String?
+  phone          String?
+  status         CompanyStatus @default(DISCOVERED)
+  companyType    String?
+  addressLine    String?
+  city           String?
+  region         String?
+  country        String?       @db.Char(2)
+  postalCode     String?
+  latitude       Decimal?      @db.Decimal(9, 6)
+  longitude      Decimal?      @db.Decimal(9, 6)
+  industry       String?
+  employeeRange  String?
+  revenueRange   String?
+  foundedYear    Int?
+  createdAt      DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @db.Timestamptz(3)
+  createdBy      String?       @db.Uuid
+  updatedBy      String?       @db.Uuid
+  archivedAt     DateTime?     @db.Timestamptz(3)
+  version        Int           @default(1)
+
+  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  aliases     CompanyAlias[]
+  employments Employment[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, normalizedName])
+  @@index([workspaceId, websiteDomain])
+  @@index([workspaceId, status])
+}
+
+enum AliasType {
+  NAME
+  DOMAIN
+  PHONE
+}
+
+model CompanyAlias {
+  id              String    @id @default(uuid()) @db.Uuid
+  workspaceId     String    @db.Uuid
+  companyId       String    @db.Uuid
+  aliasType       AliasType
+  value           String
+  normalizedValue String
+  source          String?
+  createdAt       DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company   @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([companyId, aliasType, normalizedValue])
+  @@index([workspaceId, aliasType, normalizedValue])
+}
+
+/**
+ * Maps a canonical record to an id in a provider (Google Places, Apollo, …). One external id → one record.
+ */
+model ExternalEntityMapping {
+  id          String     @id @default(uuid()) @db.Uuid
+  workspaceId String     @db.Uuid
+  entityType  EntityType
+  entityId    String     @db.Uuid
+  provider    String
+  externalId  String
+  externalUrl String?
+  firstSeenAt DateTime   @default(now()) @db.Timestamptz(3)
+  lastSeenAt  DateTime   @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, provider, entityType, externalId])
+  @@index([workspaceId, entityType, entityId])
+}
+
+enum PersonStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/**
+ * A human. Deliberately has no company_id / job_title — that lives on Employment (docs/06 §22-26).
+ */
+model Person {
+  id              String       @id @default(uuid()) @db.Uuid
+  workspaceId     String       @db.Uuid
+  firstName       String?
+  lastName        String?
+  fullName        String
+  status          PersonStatus @default(ACTIVE)
+  linkedinUrl     String?
+  professionalUrl String?
+  timezone        String?
+  language        String?
+  createdAt       DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime     @updatedAt @db.Timestamptz(3)
+  createdBy       String?      @db.Uuid
+  updatedBy       String?      @db.Uuid
+  archivedAt      DateTime?    @db.Timestamptz(3)
+  version         Int          @default(1)
+
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  employments Employment[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, fullName])
+}
+
+model Employment {
+  id          String          @id @default(uuid()) @db.Uuid
+  workspaceId String          @db.Uuid
+  personId    String          @db.Uuid
+  companyId   String          @db.Uuid
+  title       String?
+  department  String?
+  seniority   String?
+  isCurrent   Boolean         @default(true)
+  startedAt   DateTime?       @db.Date
+  endedAt     DateTime?       @db.Date
+  confidence  ConfidenceLevel @default(MEDIUM)
+  verifiedAt  DateTime?       @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  createdBy   String?         @db.Uuid
+  version     Int             @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  person    Person    @relation(fields: [workspaceId, personId], references: [workspaceId, id], onDelete: Restrict)
+  company   Company   @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@index([workspaceId, companyId])
+  @@index([workspaceId, personId])
+}
+
+enum ContactPointType {
+  EMAIL
+  PHONE
+  MOBILE
+  BUSINESS_PHONE
+  OTHER
+}
+
+enum ContactPointStatus {
+  UNVERIFIED
+  VERIFIED
+  INVALID
+  STALE
+}
+
+/**
+ * Email/phone attached to a company or person. Unverified until a ContactVerification says otherwise.
+ */
+model ContactPoint {
+  id              String             @id @default(uuid()) @db.Uuid
+  workspaceId     String             @db.Uuid
+  entityType      EntityType
+  entityId        String             @db.Uuid
+  type            ContactPointType
+  value           String
+  normalizedValue String
+  label           String?
+  status          ContactPointStatus @default(UNVERIFIED)
+  confidence      ConfidenceLevel    @default(LOW)
+  isPrimary       Boolean            @default(false)
+  firstSeenAt     DateTime           @default(now()) @db.Timestamptz(3)
+  lastVerifiedAt  DateTime?          @db.Timestamptz(3)
+  createdAt       DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @db.Timestamptz(3)
+  createdBy       String?            @db.Uuid
+  archivedAt      DateTime?          @db.Timestamptz(3)
+  version         Int                @default(1)
+
+  workspace     Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  verifications ContactVerification[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, entityType, entityId, type, normalizedValue])
+  @@index([workspaceId, normalizedValue])
+}
+
+enum VerificationStatus {
+  VALID
+  INVALID
+  RISKY
+  UNKNOWN
+  CATCH_ALL
+  TEMPORARY
+}
+
+model ContactVerification {
+  id             String             @id @default(uuid()) @db.Uuid
+  workspaceId    String             @db.Uuid
+  contactPointId String             @db.Uuid
+  provider       String
+  status         VerificationStatus
+  verifiedAt     DateTime           @db.Timestamptz(3)
+  expiresAt      DateTime?          @db.Timestamptz(3)
+  providerResult Json?
+  createdAt      DateTime           @default(now()) @db.Timestamptz(3)
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  contactPoint ContactPoint @relation(fields: [workspaceId, contactPointId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([workspaceId, contactPointId, verifiedAt])
+}
+
+// ──────────────────────────── 04 Intelligence & Evidence ────────────────────────────
+
+enum FreshnessStatus {
+  FRESH
+  AGING
+  STALE
+}
+
+/**
+ * Where a piece of information came from and when it was observed (docs/06 §31-40).
+ */
+model Evidence {
+  id              String          @id @default(uuid()) @db.Uuid
+  workspaceId     String          @db.Uuid
+  entityType      EntityType
+  entityId        String          @db.Uuid
+  evidenceType    String
+  sourceType      String
+  sourceName      String?
+  sourceUrl       String?
+  provider        String?
+  observedAt      DateTime        @db.Timestamptz(3)
+  retrievedAt     DateTime        @default(now()) @db.Timestamptz(3)
+  contentExcerpt  String?
+  contentHash     String?
+  storageRef      String?
+  confidence      ConfidenceLevel @default(MEDIUM)
+  freshnessStatus FreshnessStatus @default(FRESH)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  createdBy       String?         @db.Uuid
+
+  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  facts     FactEvidence[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, entityType, entityId])
+}
+
+enum FactStatus {
+  ACTIVE
+  CONFLICTED
+  SUPERSEDED
+  INVALIDATED
+}
+
+/**
+ * A structured claim about an entity, supported by evidence. Never blindly overwritten — superseded instead.
+ */
+model Fact {
+  id              String          @id @default(uuid()) @db.Uuid
+  workspaceId     String          @db.Uuid
+  entityType      EntityType
+  entityId        String          @db.Uuid
+  factType        String
+  field           String
+  valueJson       Json
+  status          FactStatus      @default(ACTIVE)
+  confidence      ConfidenceLevel @default(MEDIUM)
+  validFrom       DateTime?       @db.Timestamptz(3)
+  validUntil      DateTime?       @db.Timestamptz(3)
+  firstObservedAt DateTime        @db.Timestamptz(3)
+  lastConfirmedAt DateTime        @db.Timestamptz(3)
+  supersededById  String?         @db.Uuid
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  createdBy       String?         @db.Uuid
+  version         Int             @default(1)
+
+  workspace    Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  evidence     FactEvidence[]
+  supersededBy Fact?          @relation("FactSupersession", fields: [supersededById], references: [id], onDelete: Restrict)
+  supersedes   Fact[]         @relation("FactSupersession")
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, entityType, entityId, field, status])
+}
+
+model FactEvidence {
+  workspaceId String   @db.Uuid
+  factId      String   @db.Uuid
+  evidenceId  String   @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  fact      Fact      @relation(fields: [workspaceId, factId], references: [workspaceId, id], onDelete: Cascade)
+  evidence  Evidence  @relation(fields: [workspaceId, evidenceId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@id([factId, evidenceId])
+  @@index([workspaceId, evidenceId])
+}
+
+// ───────────────────────── 06 Sales skeleton (seeded default pipeline) ─────────────────────────
+
+model Pipeline {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  name        String
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  archivedAt  DateTime? @db.Timestamptz(3)
+  version     Int       @default(1)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  stages    PipelineStage[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, name])
+}
+
+enum StageType {
+  OPEN
+  WON
+  LOST
+}
+
+model PipelineStage {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  pipelineId  String    @db.Uuid
+  name        String
+  position    Int
+  stageType   StageType @default(OPEN)
+  isClosed    Boolean   @default(false)
+  isWon       Boolean   @default(false)
+  isLost      Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  pipeline  Pipeline  @relation(fields: [workspaceId, pipelineId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([pipelineId, position])
+  @@unique([pipelineId, name])
+}
+
+// ───────────────────────── 08 System · Policy · Audit ─────────────────────────
+
+enum PolicyStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+/**
+ * Skeleton only — evaluation is Phase 10. Seeded with the hard safety rules so they exist from day one.
+ */
+model Policy {
+  id             String       @id @default(uuid()) @db.Uuid
+  workspaceId    String       @db.Uuid
+  name           String
+  policyType     String
+  scopeType      String       @default("WORKSPACE")
+  scopeId        String?      @db.Uuid
+  status         PolicyStatus @default(DRAFT)
+  priority       Int          @default(100)
+  effectiveFrom  DateTime?    @db.Timestamptz(3)
+  effectiveUntil DateTime?    @db.Timestamptz(3)
+  createdAt      DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime     @updatedAt @db.Timestamptz(3)
+  version        Int          @default(1)
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  rules     PolicyRule[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, name])
+}
+
+enum PolicyEffect {
+  ALLOW
+  REQUIRE_APPROVAL
+  WAIT
+  BLOCK
+  ESCALATE
+}
+
+model PolicyRule {
+  id            String       @id @default(uuid()) @db.Uuid
+  workspaceId   String       @db.Uuid
+  policyId      String       @db.Uuid
+  ruleType      String
+  conditionJson Json
+  effect        PolicyEffect
+  isHardRule    Boolean      @default(false)
+  priority      Int          @default(100)
+  description   String?
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  policy    Policy    @relation(fields: [workspaceId, policyId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([policyId, ruleType])
+}
+
+/**
+ * Append-only (UPDATE/DELETE blocked by a trigger in the migration).
+ */
+model AuditLog {
+  id            String     @id @default(uuid()) @db.Uuid
+  workspaceId   String?    @db.Uuid
+  actorType     ActorType
+  actorId       String?
+  action        String
+  entityType    EntityType
+  entityId      String     @db.Uuid
+  beforeJson    Json?
+  afterJson     Json?
+  reason        String?
+  requestId     String?
+  correlationId String?
+  createdAt     DateTime   @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, entityType, entityId, createdAt])
+  @@index([correlationId])
+}
+
+/**
+ * Business fact that something happened. Written in the same transaction as the mutation (Phase 4 writer).
+ */
+model DomainEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  workspaceId   String?   @db.Uuid
+  eventType     String
+  eventVersion  Int       @default(1)
+  aggregateType String
+  aggregateId   String    @db.Uuid
+  payload       Json
+  actorType     ActorType
+  actorId       String?
+  correlationId String?
+  causationId   String?
+  occurredAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace?    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  outbox    OutboxEvent[]
+
+  @@index([workspaceId, aggregateType, aggregateId, occurredAt])
+  @@index([eventType, occurredAt])
+}
+
+enum OutboxStatus {
+  PENDING
+  PUBLISHED
+  FAILED
+  DEAD
+}
+
+model OutboxEvent {
+  id            String       @id @default(uuid()) @db.Uuid
+  workspaceId   String?      @db.Uuid
+  domainEventId String?      @db.Uuid
+  eventType     String
+  eventVersion  Int          @default(1)
+  aggregateType String
+  aggregateId   String       @db.Uuid
+  payload       Json
+  status        OutboxStatus @default(PENDING)
+  attemptCount  Int          @default(0)
+  availableAt   DateTime     @default(now()) @db.Timestamptz(3)
+  lastError     String?
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  publishedAt   DateTime?    @db.Timestamptz(3)
+
+  workspace   Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  domainEvent DomainEvent? @relation(fields: [domainEventId], references: [id], onDelete: Restrict)
+
+  @@index([status, availableAt])
+}
+
+enum ExternalActionStatus {
+  PREPARED
+  APPROVED
+  QUEUED
+  EXECUTING
+  SUCCEEDED
+  FAILED
+  BLOCKED
+  CANCELLED
+}
+
+/**
+ * Every external side effect (email, booking, …). The idempotency key makes retries safe (docs/06 §121-132).
+ */
+model ExternalAction {
+  id                String               @id @default(uuid()) @db.Uuid
+  workspaceId       String               @db.Uuid
+  actionType        String
+  entityType        EntityType
+  entityId          String               @db.Uuid
+  status            ExternalActionStatus @default(PREPARED)
+  idempotencyKey    String
+  policyDecisionId  String?              @db.Uuid
+  approvalRequestId String?              @db.Uuid
+  provider          String
+  providerAccountId String?
+  requestRef        String?
+  responseRef       String?
+  attemptCount      Int                  @default(0)
+  lastError         String?
+  createdAt         DateTime             @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime             @updatedAt @db.Timestamptz(3)
+  executedAt        DateTime?            @db.Timestamptz(3)
+  version           Int                  @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, idempotencyKey])
+  @@index([workspaceId, status])
+}
+
+enum InboundEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+/**
+ * Webhooks/provider callbacks. Unique (provider, externalEventId) de-duplicates redeliveries.
+ */
+model InboundEvent {
+  id              String             @id @default(uuid()) @db.Uuid
+  workspaceId     String?            @db.Uuid
+  provider        String
+  externalEventId String
+  eventType       String
+  payloadRef      String?
+  payload         Json?
+  status          InboundEventStatus @default(RECEIVED)
+  lastError       String?
+  receivedAt      DateTime           @default(now()) @db.Timestamptz(3)
+  processedAt     DateTime?          @db.Timestamptz(3)
+
+  workspace Workspace? @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([provider, externalEventId])
+  @@index([status, receivedAt])
 }

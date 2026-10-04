@@ -9,7 +9,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 |---|---|---|
 | 0 | Engineering Setup | ✅ done 2026-10-04 |
 | 1 | Platform Foundation (logging, request/correlation IDs, error taxonomy) | ✅ done 2026-10-04 |
-| 2 | Database Foundation | ⬜ |
+| 2 | Database Foundation | ✅ done 2026-10-04 |
 | 3 | Authentication + RBAC | ⬜ |
 | 4 | Events + Outbox + Queue | ⬜ |
 | 5 | Provider Gateway (fake providers first) | ⬜ |
@@ -39,6 +39,15 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] Zod validation pipe (strict objects reject unknown fields)
 - [x] Health split: `/api/health/live`, `/api/health/ready`, `/api/health` (full diagnostics)
 - [x] Unit tests (`pnpm test`, Node test runner) + CI runs them
+
+## Phase 2 — Definition of Done
+- [x] Identity: Workspace, User, WorkspaceMember, Role (per workspace), Permission (catalog), RolePermission (ALLOW/DENY + scope), UserRole, AuthorityLimit
+- [x] System tables early: AuditLog (append-only via DB trigger), DomainEvent, OutboxEvent, ExternalAction (unique idempotency key), InboundEvent (unique provider + external id)
+- [x] CRM core: Company, CompanyAlias, ExternalEntityMapping, Person, Employment, ContactPoint, ContactVerification, Evidence, Fact, FactEvidence
+- [x] Constraints from day one: FKs, uniques, enums, `version` fields, CHECKs, one-primary-contact index; child rows use composite `(workspaceId, id)` FKs so cross-workspace links are impossible in Postgres itself
+- [x] Dev seed (`pnpm db:seed`, idempotent): workspace, owner user, 5 roles + grants, authority limits, default pipeline (7 stages), hard-safety policy skeleton
+- [x] Application services (`apps/api/src/modules`): create workspace/member, company (+aliases, optimistic concurrency), person, employment, contact point (unverified by default), evidence, fact (confirm / conflict / explicit supersede — never blind overwrite); every change audited in the same transaction
+- [x] Integration tests against a real `revenue_os_test` database (`pnpm test`), CI runs them with a Postgres service
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

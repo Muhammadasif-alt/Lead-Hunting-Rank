@@ -2,7 +2,7 @@
 export const ROADMAP: { phase: number; name: string; done: boolean }[] = [
   { phase: 0, name: "Engineering setup", done: true },
   { phase: 1, name: "Platform foundation", done: true },
-  { phase: 2, name: "Database foundation", done: false },
+  { phase: 2, name: "Database foundation", done: true },
   { phase: 3, name: "Authentication + RBAC", done: false },
   { phase: 4, name: "Events, outbox + queues", done: false },
   { phase: 5, name: "Provider gateway", done: false },

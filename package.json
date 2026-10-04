@@ -21,6 +21,8 @@
     "typecheck": "pnpm build:packages && pnpm -r typecheck",
     "db:generate": "pnpm --filter @revenue-os/database db:generate",
     "db:migrate": "pnpm --filter @revenue-os/database db:migrate",
+    "db:deploy": "pnpm --filter @revenue-os/database db:deploy",
+    "db:seed": "pnpm --filter @revenue-os/database build && pnpm --filter @revenue-os/database db:seed",
     "db:studio": "pnpm --filter @revenue-os/database db:studio",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
