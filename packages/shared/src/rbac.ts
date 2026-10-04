@@ -43,6 +43,8 @@ export const PERMISSIONS = {
   'outbound.emergency_stop': { class: 'E', description: 'Trigger the emergency stop' },
   'outbound.resume': { class: 'E', description: 'Resume outbound after an emergency stop' },
   'workspace.manage': { class: 'E', description: 'Workspace settings, ownership and security' },
+  'system.read': { class: 'A', description: 'View system health, event pipeline and failed jobs' },
+  'system.manage': { class: 'E', description: 'Retry or dismiss failed jobs and run pipeline diagnostics' },
 } as const satisfies Record<string, { class: ActionClass; description: string }>;
 
 export type PermissionKey = keyof typeof PERMISSIONS;

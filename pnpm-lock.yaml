@@ -190,6 +190,9 @@ importers:
       '@revenue-os/database':
         specifier: workspace:*
         version: link:../../packages/database
+      '@revenue-os/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@revenue-os/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -270,6 +273,12 @@ importers:
       '@revenue-os/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@revenue-os/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@revenue-os/events':
+        specifier: workspace:*
+        version: link:../../packages/events
       '@revenue-os/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -321,6 +330,28 @@ importers:
       prisma:
         specifier: ^7.10.0
         version: 7.10.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(typescript@5.9.3)
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/events:
+    dependencies:
+      '@revenue-os/database':
+        specifier: workspace:*
+        version: link:../database
+      '@revenue-os/shared':
+        specifier: workspace:*
+        version: link:../shared
+      bullmq:
+        specifier: ^6.3.11
+        version: 6.3.11(ioredis@6.0.0)(pg@8.23.1)
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.19.1
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

@@ -1,6 +1,6 @@
 import { Inject, Injectable, type OnModuleDestroy } from '@nestjs/common';
 import type { AppConfig } from '@revenue-os/config';
-import { QUEUES, type QueueName } from '@revenue-os/shared';
+import { QUEUES, queuePrefix, type QueueName } from '@revenue-os/shared';
 import { Queue, QueueEvents } from 'bullmq';
 import { Redis } from 'ioredis';
 import { APP_CONFIG } from './tokens.js';
@@ -11,12 +11,15 @@ export class QueueService implements OnModuleDestroy {
   private readonly queues = new Map<QueueName, Queue>();
   private readonly events = new Map<QueueName, QueueEvents>();
   private readonly redisUrl: string;
+  /** Environment-scoped Redis key prefix — must match the worker's (docs/11 §110-113). */
+  readonly prefix: string;
   // BullMQ in native ESM needs ready-made ioredis clients. Producers share one; each QueueEvents
   // gets its own because it holds a blocking connection.
   private readonly connection: Redis;
 
   constructor(@Inject(APP_CONFIG) config: AppConfig) {
     this.redisUrl = config.REDIS_URL;
+    this.prefix = queuePrefix(config.APP_ENV);
     this.connection = new Redis(this.redisUrl, { maxRetriesPerRequest: 1 });
     this.connection.on('error', () => undefined); // surfaced through /api/health instead of crashing
   }
@@ -24,7 +27,7 @@ export class QueueService implements OnModuleDestroy {
   queue(name: QueueName): Queue {
     let queue = this.queues.get(name);
     if (!queue) {
-      queue = new Queue(name, { connection: this.connection });
+      queue = new Queue(name, { connection: this.connection, prefix: this.prefix });
       queue.on('error', () => undefined);
       this.queues.set(name, queue);
     }
@@ -36,7 +39,7 @@ export class QueueService implements OnModuleDestroy {
     if (!events) {
       const connection = new Redis(this.redisUrl, { maxRetriesPerRequest: null });
       connection.on('error', () => undefined);
-      events = new QueueEvents(name, { connection });
+      events = new QueueEvents(name, { connection, prefix: this.prefix });
       events.on('error', () => undefined);
       this.events.set(name, events);
     }

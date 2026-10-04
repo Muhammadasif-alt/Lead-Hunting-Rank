@@ -3,8 +3,9 @@ import { isDeepStrictEqual } from 'node:util';
 import { Injectable } from '@nestjs/common';
 import type { ConfidenceLevel, Prisma } from '@revenue-os/database';
 import { ValidationError } from '@revenue-os/shared';
+import { recordEvent } from '@revenue-os/events';
 import { PrismaService } from '../../infra/prisma.service.js';
-import { actorUserId, assertEntityInWorkspace, writeAudit, type ServiceContext } from '../../domain/service-context.js';
+import { actorUserId, assertEntityInWorkspace, writeAudit, type ServiceContext, type Tx } from '../../domain/service-context.js';
 
 export interface EvidenceInput {
   entityType: 'COMPANY' | 'PERSON';
@@ -65,6 +66,12 @@ export class EvidenceService {
         },
       });
       await writeAudit(tx, ctx, { action: 'evidence.recorded', entityType: 'EVIDENCE', entityId: evidence.id, after: evidence });
+      await recordEvent(tx, ctx, 'EvidenceRecorded', evidence.id, {
+        evidenceId: evidence.id,
+        entityType: evidence.entityType,
+        entityId: evidence.entityId,
+        sourceType: evidence.sourceType,
+      });
       return evidence;
     });
   }
@@ -126,6 +133,7 @@ export class EvidenceService {
         }
         const outcome: FactOutcome = resolves ? 'SUPERSEDED' : 'CONFIRMED';
         await writeAudit(tx, ctx, { action: `fact.${outcome.toLowerCase()}`, entityType: 'FACT', entityId: fact.id, after: { evidenceIds, status: fact.status } });
+        await emitFactEvent(tx, ctx, fact.id, input, outcome, resolves ? conflicting.map((f) => f.id) : []);
         return { fact, outcome };
       }
 
@@ -163,7 +171,15 @@ export class EvidenceService {
         before: conflicting.length ? conflicting.map((f) => ({ id: f.id, value: f.valueJson, status: f.status })) : undefined,
         after: fact,
       });
+      await emitFactEvent(tx, ctx, fact.id, input, outcome, conflicting.map((f) => f.id));
       return { fact, outcome };
     });
   }
+}
+
+function emitFactEvent(tx: Tx, ctx: ServiceContext, factId: string, input: FactInput, outcome: FactOutcome, otherFactIds: string[]) {
+  const subject = { factId, entityType: input.entityType, entityId: input.entityId, field: input.field };
+  if (outcome === 'CONFLICTED') return recordEvent(tx, ctx, 'FactConflicted', factId, { ...subject, conflictingFactIds: otherFactIds });
+  if (outcome === 'SUPERSEDED') return recordEvent(tx, ctx, 'FactSuperseded', factId, { ...subject, supersededFactIds: otherFactIds });
+  return recordEvent(tx, ctx, 'FactRecorded', factId, { ...subject, outcome });
 }

@@ -265,7 +265,7 @@ export const SCREENS: Screen[] = [
     group: "Operations",
     phase: null,
     tone: "system",
-    summary: "Live status of web, API, database, Redis and background workers.",
+    summary: "Live status of web, API, database, Redis, workers, the event pipeline and failed jobs.",
     capabilities: [],
   },
 ];

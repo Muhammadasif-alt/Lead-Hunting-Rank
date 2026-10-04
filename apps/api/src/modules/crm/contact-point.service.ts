@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { ContactPointType } from '@revenue-os/database';
 import { ConflictError, ValidationError, normalizeEmail, normalizePhone } from '@revenue-os/shared';
+import { recordEvent } from '@revenue-os/events';
 import { PrismaService } from '../../infra/prisma.service.js';
 import {
   actorUserId,
@@ -54,6 +55,12 @@ export class ContactPointService {
           },
         });
         await writeAudit(tx, ctx, { action: 'contact_point.added', entityType: 'CONTACT_POINT', entityId: contactPoint.id, after: contactPoint });
+        await recordEvent(tx, ctx, 'ContactPointAdded', contactPoint.id, {
+          contactPointId: contactPoint.id,
+          entityType: contactPoint.entityType,
+          entityId: contactPoint.entityId,
+          type: contactPoint.type,
+        });
         return contactPoint;
       });
     } catch (err) {

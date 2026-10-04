@@ -120,6 +120,78 @@ export class ProviderError extends AppError {
 
 export class RateLimitedError extends AppError {
   readonly code = 'RATE_LIMITED';
+
+  constructor(
+    message: string,
+    /** Provider-advised wait (Retry-After), used by workers to back off. */
+    readonly retryAfterMs?: number,
+  ) {
+    super(message);
+  }
+}
+
+/** A job exceeded its time budget. Retryable — but for external actions the outcome is unknown (see ExternalAction). */
+export class JobTimeoutError extends Error {
+  constructor(readonly timeoutMs: number) {
+    super(`Timed out after ${timeoutMs} ms`);
+    this.name = 'JobTimeoutError';
+  }
+}
+
+/** A failure that retrying can never fix (bad payload, unsupported job). Goes straight to the dead-letter queue. */
+export class PermanentError extends Error {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'PermanentError';
+  }
+}
+
+/**
+ * Failure classes from docs/11 §35-43 — a worker classifies before it decides to retry.
+ * POLICY is not a technical failure: the business action is BLOCKED and the job completes.
+ */
+export type FailureCategory = 'TRANSIENT' | 'RATE_LIMIT' | 'AUTH' | 'VALIDATION' | 'POLICY' | 'NOT_FOUND' | 'PERMANENT' | 'UNKNOWN';
+
+export interface FailureClassification {
+  category: FailureCategory;
+  retryable: boolean;
+  retryAfterMs?: number;
+}
+
+const TRANSIENT_NODE_CODES = new Set(['ECONNREFUSED', 'ECONNRESET', 'ETIMEDOUT', 'EPIPE', 'EAI_AGAIN', 'ENOTFOUND', 'EHOSTUNREACH', 'UND_ERR_SOCKET']);
+// Prisma: can't reach DB / timed out / transaction write conflict or deadlock / pool timeout.
+const TRANSIENT_PRISMA_CODES = new Set(['P1001', 'P1002', 'P1008', 'P1017', 'P2024', 'P2034']);
+
+export function classifyFailure(err: unknown): FailureClassification {
+  if (err instanceof RateLimitedError) return { category: 'RATE_LIMIT', retryable: true, retryAfterMs: err.retryAfterMs };
+  if (err instanceof ProviderError) {
+    return err.code === 'PROVIDER_AUTH_REQUIRED'
+      ? { category: 'AUTH', retryable: false }
+      : { category: 'TRANSIENT', retryable: true };
+  }
+  if (err instanceof PolicyError) return { category: 'POLICY', retryable: false };
+  if (err instanceof NotFoundError) return { category: 'NOT_FOUND', retryable: false };
+  if (err instanceof ConflictError) {
+    return err.code === 'VERSION_CONFLICT' ? { category: 'TRANSIENT', retryable: true } : { category: 'VALIDATION', retryable: false };
+  }
+  if (err instanceof ValidationError || err instanceof BusinessRuleError) return { category: 'VALIDATION', retryable: false };
+  if (err instanceof ForbiddenError || err instanceof UnauthenticatedError || err instanceof PermanentError) {
+    return { category: 'PERMANENT', retryable: false };
+  }
+  if (err instanceof JobTimeoutError) return { category: 'TRANSIENT', retryable: true };
+
+  const code = errorCode(err);
+  if (code && (TRANSIENT_NODE_CODES.has(code) || TRANSIENT_PRISMA_CODES.has(code))) return { category: 'TRANSIENT', retryable: true };
+  return { category: 'UNKNOWN', retryable: true };
+}
+
+function errorCode(err: unknown): string | undefined {
+  for (let e: unknown = err, depth = 0; e && depth < 5; e = (e as { cause?: unknown }).cause, depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+    if (e instanceof AggregateError && e.errors.length > 0) return errorCode(e.errors.at(-1));
+  }
+  return undefined;
 }
 
 /**

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import type { ConfidenceLevel } from '@revenue-os/database';
 import { NotFoundError, ValidationError } from '@revenue-os/shared';
+import { recordEvent } from '@revenue-os/events';
 import { PrismaService } from '../../infra/prisma.service.js';
 import { actorUserId, writeAudit, type ServiceContext } from '../../domain/service-context.js';
 
@@ -51,6 +52,7 @@ export class PersonService {
         },
       });
       await writeAudit(tx, ctx, { action: 'person.created', entityType: 'PERSON', entityId: person.id, after: person });
+      await recordEvent(tx, ctx, 'PersonCreated', person.id, { personId: person.id });
       return person;
     });
   }
@@ -85,6 +87,11 @@ export class PersonService {
         },
       });
       await writeAudit(tx, ctx, { action: 'employment.attached', entityType: 'EMPLOYMENT', entityId: employment.id, after: employment });
+      await recordEvent(tx, ctx, 'EmploymentAttached', employment.id, {
+        employmentId: employment.id,
+        personId: employment.personId,
+        companyId: employment.companyId,
+      });
       return employment;
     });
   }

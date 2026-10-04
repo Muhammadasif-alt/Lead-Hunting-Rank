@@ -45,6 +45,7 @@ enum EntityType {
   CONTACT_POINT
   EVIDENCE
   FACT
+  EXTERNAL_ACTION
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -785,6 +786,8 @@ model OutboxEvent {
   aggregateType String
   aggregateId   String       @db.Uuid
   payload       Json
+  correlationId String?
+  causationId   String?
   status        OutboxStatus @default(PENDING)
   attemptCount  Int          @default(0)
   availableAt   DateTime     @default(now()) @db.Timestamptz(3)
@@ -800,17 +803,21 @@ model OutboxEvent {
 
 enum ExternalActionStatus {
   PREPARED
+  WAITING_APPROVAL
   APPROVED
   QUEUED
   EXECUTING
   SUCCEEDED
-  FAILED
+  WAITING
   BLOCKED
+  FAILED
   CANCELLED
+  UNKNOWN_OUTCOME
 }
 
 /**
  * Every external side effect (email, booking, …). The idempotency key makes retries safe (docs/06 §121-132).
+ * State machine and execution rules: packages/events/src/external-action.ts (docs/11 §18-29).
  */
 model ExternalAction {
   id                String               @id @default(uuid()) @db.Uuid
@@ -824,12 +831,20 @@ model ExternalAction {
   approvalRequestId String?              @db.Uuid
   provider          String
   providerAccountId String?
+  /// What will be sent, frozen at prepare time. A changed payload needs a new action (and a new approval).
+  payload           Json                 @default("{}")
+  payloadHash       String               @default("")
+  correlationId     String?
+  causationId       String?
   requestRef        String?
   responseRef       String?
   attemptCount      Int                  @default(0)
   lastError         String?
+  statusReason      String?
   createdAt         DateTime             @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime             @updatedAt @db.Timestamptz(3)
+  /// Set when a worker claims the action (QUEUED → EXECUTING); a stale claim means the worker died mid-call.
+  claimedAt         DateTime?            @db.Timestamptz(3)
   executedAt        DateTime?            @db.Timestamptz(3)
   version           Int                  @default(1)
 
@@ -837,6 +852,7 @@ model ExternalAction {
 
   @@unique([workspaceId, idempotencyKey])
   @@index([workspaceId, status])
+  @@index([status, claimedAt])
 }
 
 enum InboundEventStatus {
@@ -867,4 +883,54 @@ model InboundEvent {
 
   @@unique([provider, externalEventId])
   @@index([status, receivedAt])
+}
+
+enum DeadLetterStatus {
+  OPEN
+  RETRY_SCHEDULED
+  RESOLVED
+  IGNORED
+}
+
+/**
+ * A job that exhausted its retries or failed permanently (docs/11 §44-47). Postgres keeps it after Redis
+ * cleans up, so an admin can see what failed, why, how often and for which entity — and retry safely.
+ * workspaceId is plain (no FK): system jobs have none, and DLQ rows must never block workspace changes.
+ */
+model DeadLetterRecord {
+  id              String           @id @default(uuid()) @db.Uuid
+  workspaceId     String?          @db.Uuid
+  queue           String
+  jobName         String
+  jobId           String?
+  jobData         Json
+  entityType      String?
+  entityId        String?
+  correlationId   String?
+  failureCategory String
+  lastError       String
+  attempts        Int
+  retryCount      Int              @default(0)
+  status          DeadLetterStatus @default(OPEN)
+  firstFailedAt   DateTime         @default(now()) @db.Timestamptz(3)
+  lastFailedAt    DateTime         @default(now()) @db.Timestamptz(3)
+  resolvedAt      DateTime?        @db.Timestamptz(3)
+  resolvedBy      String?          @db.Uuid
+  resolutionNote  String?
+
+  @@index([status, lastFailedAt])
+  @@index([workspaceId, status])
+  @@index([correlationId])
+}
+
+/**
+ * Consumer-side idempotency (docs/11 §15-17): a consumer records each event it handled, in the same
+ * transaction as its effect, so an at-least-once redelivery is acknowledged without running twice.
+ */
+model InboxReceipt {
+  consumer    String
+  eventId     String
+  processedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@id([consumer, eventId])
 }

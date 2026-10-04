@@ -11,7 +11,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 1 | Platform Foundation (logging, request/correlation IDs, error taxonomy) | ✅ done 2026-10-04 |
 | 2 | Database Foundation | ✅ done 2026-10-04 |
 | 3 | Authentication + RBAC | ✅ done 2026-10-04 |
-| 4 | Events + Outbox + Queue | ⬜ |
+| 4 | Events + Outbox + Queue | ✅ done 2026-10-04 |
 | 5 | Provider Gateway (fake providers first) | ⬜ |
 | 6 | CRM Core — Company 360 | ⬜ |
 | 7 | Lead Hunter — Market Exhaust | ⬜ |
@@ -60,6 +60,21 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] Web: `/login` page, `proxy.ts` optimistic redirect, `(app)` layout validates the session with the API, user menu with sign-out; landing "Sign in" → `/login`
 - Deferred by plan: password reset email (needs Email provider, Phase 5/10), MFA enforcement for OWNER/ADMIN (Phase 22 hardening — schema is MFA-ready), invite acceptance flow (Team & Roles, Phase 21)
 
+## Phase 4 — Definition of Done
+- [x] `packages/events` (`@revenue-os/events`): event registry (payload type, version, owner, PII class, replay-safe, consumer routes), transactional outbox writer `recordEvent(tx, …)` — DomainEvent + OutboxEvent in the caller's transaction; correlation (workflow) + causation (direct cause) IDs
+- [x] Phase 2 services now emit events in the same transaction as their change (WorkspaceCreated, MemberAdded, CompanyCreated/Updated, PersonCreated, EmploymentAttached, ContactPointAdded, EvidenceRecorded, FactRecorded/Conflicted/Superseded); DomainEvent is append-only (DB trigger)
+- [x] Outbox dispatcher: `FOR UPDATE SKIP LOCKED` batches, deterministic job ids (outbox id + consumer), backoff on publish failure, DEAD after max attempts, unknown types parked; runs in the worker (`startOutboxLoop`)
+- [x] Queues: environment-prefixed (`rhl:<APP_ENV>`), priority classes, minimal versioned job payloads
+- [x] Shared worker wrapper (`createQueueWorker`): correlation context, time budget, failure classification (TRANSIENT/RATE_LIMIT/AUTH/VALIDATION/POLICY/NOT_FOUND/PERMANENT/UNKNOWN), exponential backoff + jitter or provider Retry-After, POLICY = business outcome (no DLQ), metrics + Redis heartbeat
+- [x] DLQ in Postgres (`DeadLetterRecord`): failure category, attempts, entity, correlation; admin list / retry (revalidates current state) / dismiss — audited; retried job updates the same record
+- [x] Consumer idempotency: `InboxReceipt` + `processOnce()`
+- [x] ExternalAction state machine PREPARED → (WAITING_APPROVAL → APPROVED →) QUEUED → EXECUTING → SUCCEEDED, with WAITING / BLOCKED / FAILED / CANCELLED / UNKNOWN_OUTCOME; frozen payload + hash, IDEMPOTENCY_CONFLICT on a changed payload; atomic claim; revalidation right before the provider call (Policy/kill switch plug in at Phase 10); SUCCEEDED can't change (DB trigger)
+- [x] Crash safety: lost provider response → UNKNOWN_OUTCOME → reconcile with provider (never blind resend); stale EXECUTING claims swept every minute → reconciled
+- [x] Idempotency proven with a fake provider (no built-in dedupe): same logical send delivered 10× (and 10× concurrently) → one external effect
+- [x] DoD e2e test: HTTP command → DB transaction → Outbox → Dispatcher → BullMQ (real Redis) → Worker → Fake provider → Result → Event
+- [x] System Health screen: event pipeline stats, live end-to-end test (with simulated 429 / lost response), queues, workers, failed jobs (needs `system.read` / `system.manage` — OWNER, ADMIN)
+
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.
-- `packages/events`, `policy`, `providers`, `ai` khaali hain — apne phase mein bharenge.
+- `packages/policy`, `providers`, `ai` khaali hain — apne phase mein bharenge.
+- Dev seed adds new permissions to existing workspaces — after pulling a phase that adds permissions, run `pnpm db:seed` again.

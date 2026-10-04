@@ -1,6 +1,7 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
+import { EventPipeline } from "@/components/app/EventPipeline";
 import { HealthList } from "@/components/app/HealthList";
 import { PageHeader } from "@/components/app/PageHeader";
 import { findScreen } from "@/lib/screens";
@@ -44,6 +45,8 @@ export default function Diagnostics() {
         ping job). If something is down, make sure Docker Desktop is running, then <code className="font-mono">pnpm infra:up</code>{" "}
         and <code className="font-mono">pnpm dev</code>.
       </p>
+
+      <EventPipeline />
     </div>
   );
 }

@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
   AuthorityExceededError,
+  classifyFailure,
+  ConflictError,
   describeError,
+  JobTimeoutError,
+  NotFoundError,
+  PermanentError,
+  RateLimitedError,
   ForbiddenError,
   PolicyError,
   ProviderError,
@@ -39,4 +45,21 @@ test('describeError uses code when the message is uninformative', () => {
 
 test('describeError returns AppError messages unchanged', () => {
   assert.equal(describeError(new ValidationError('Name is required')), 'Name is required');
+});
+
+test('classifyFailure decides retry vs give up per docs/11 §35-43', () => {
+  assert.deepEqual(classifyFailure(new RateLimitedError('slow down', 30_000)), { category: 'RATE_LIMIT', retryable: true, retryAfterMs: 30_000 });
+  assert.deepEqual(classifyFailure(new ProviderError('PROVIDER_UNAVAILABLE', '503')), { category: 'TRANSIENT', retryable: true });
+  // Expired OAuth: stop the retry storm, ask a human to reconnect.
+  assert.deepEqual(classifyFailure(new ProviderError('PROVIDER_AUTH_REQUIRED', 'token expired')), { category: 'AUTH', retryable: false });
+  assert.deepEqual(classifyFailure(new ValidationError('bad email')), { category: 'VALIDATION', retryable: false });
+  assert.deepEqual(classifyFailure(new PolicyError('SUPPRESSED', 'unsubscribed')), { category: 'POLICY', retryable: false });
+  assert.deepEqual(classifyFailure(new NotFoundError('gone')), { category: 'NOT_FOUND', retryable: false });
+  assert.deepEqual(classifyFailure(new ConflictError('VERSION_CONFLICT', 'stale')), { category: 'TRANSIENT', retryable: true });
+  assert.deepEqual(classifyFailure(new ConflictError('IDEMPOTENCY_CONFLICT', 'payload changed')), { category: 'VALIDATION', retryable: false });
+  assert.deepEqual(classifyFailure(new PermanentError('unknown job')), { category: 'PERMANENT', retryable: false });
+  assert.deepEqual(classifyFailure(new JobTimeoutError(1000)), { category: 'TRANSIENT', retryable: true });
+  assert.deepEqual(classifyFailure(Object.assign(new Error('x'), { code: 'ECONNRESET' })), { category: 'TRANSIENT', retryable: true });
+  assert.deepEqual(classifyFailure(new Error('wrapped', { cause: Object.assign(new Error(''), { code: 'P2034' }) })), { category: 'TRANSIENT', retryable: true });
+  assert.deepEqual(classifyFailure(new Error('???')), { category: 'UNKNOWN', retryable: true });
 });

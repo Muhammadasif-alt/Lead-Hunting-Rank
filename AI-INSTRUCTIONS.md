@@ -21,6 +21,7 @@ This file is the entry point for Claude, Copilot, OpenCode, or any AI working on
 - AI proposes; deterministic Policy Engine decides (ACT / ASK / WAIT / BLOCK). LLM output never writes straight to the DB.
 - Every external side effect goes through ExternalAction + idempotency + policy + kill switch.
 - Controllers never touch Prisma directly — application services do.
+- Every state change emits a domain event via `recordEvent(tx, …)` from `@revenue-os/events` in the SAME transaction (transactional outbox); declare new events in `packages/events/src/registry.ts`. Side effects: `prepareExternalAction` + `queueExternalAction`, never a direct provider call. Workers use `createQueueWorker` and must be idempotent.
 - Every API route is authenticated by default (global guards). Mark only login/health-type routes `@Public()`; protect actions with `@RequirePermission('…')` and authority checks via `AccessService`. Services take a `ServiceContext` (workspace + actor) built from the session — never a workspaceId/userId from the request body.
 - Config only via `loadConfig()` from `@revenue-os/config`; queue names only from `@revenue-os/shared`.
 - Not a GHL clone. Mental model: Goal → Intelligence → Decision → Action → Outcome → Learning.

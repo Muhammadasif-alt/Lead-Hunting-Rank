@@ -8,6 +8,7 @@ import {
   normalizeDomain,
   normalizePhone,
 } from '@revenue-os/shared';
+import { recordEvent } from '@revenue-os/events';
 import { PrismaService } from '../../infra/prisma.service.js';
 import { actorUserId, writeAudit, type ServiceContext, type Tx } from '../../domain/service-context.js';
 
@@ -38,6 +39,11 @@ export class CompanyService {
       });
       await this.syncAliases(tx, ctx.workspaceId, company.id, input, data);
       await writeAudit(tx, ctx, { action: 'company.created', entityType: 'COMPANY', entityId: company.id, after: company });
+      await recordEvent(tx, ctx, 'CompanyCreated', company.id, {
+        companyId: company.id,
+        displayName: company.displayName,
+        websiteDomain: company.websiteDomain,
+      });
       return company;
     });
   }
@@ -64,6 +70,7 @@ export class CompanyService {
       const after = await tx.company.findUniqueOrThrow({ where: { id } });
       await this.syncAliases(tx, ctx.workspaceId, id, input, data);
       await writeAudit(tx, ctx, { action: 'company.updated', entityType: 'COMPANY', entityId: id, before, after });
+      await recordEvent(tx, ctx, 'CompanyUpdated', id, { companyId: id, version: after.version, changedFields: Object.keys(input) });
       return after;
     });
   }

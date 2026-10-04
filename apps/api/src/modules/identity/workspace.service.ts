@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { provisionWorkspaceDefaults, type ActorType, type RoleKey } from '@revenue-os/database';
 import { ConflictError, NotFoundError, ValidationError, normalizeEmail } from '@revenue-os/shared';
+import { recordEvent } from '@revenue-os/events';
 import { PrismaService } from '../../infra/prisma.service.js';
 import { isUniqueViolation, writeAudit, type ServiceContext } from '../../domain/service-context.js';
 
@@ -39,6 +40,7 @@ export class WorkspaceService {
 
         const ctx: ServiceContext = { workspaceId: workspace.id, actor };
         await writeAudit(tx, ctx, { action: 'workspace.created', entityType: 'WORKSPACE', entityId: workspace.id, after: workspace });
+        await recordEvent(tx, ctx, 'WorkspaceCreated', workspace.id, { slug, ownerUserId: user.id });
         return { workspace, ownerUserId: user.id, ownerMemberId: member.id };
       });
     } catch (err) {
@@ -72,6 +74,7 @@ export class WorkspaceService {
         entityId: user.id,
         after: { memberId: member.id, role: input.role },
       });
+      await recordEvent(tx, ctx, 'MemberAdded', ctx.workspaceId, { memberId: member.id, userId: user.id, role: input.role });
       return { userId: user.id, memberId: member.id };
     });
   }
