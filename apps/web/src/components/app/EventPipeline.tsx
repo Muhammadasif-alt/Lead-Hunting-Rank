@@ -218,7 +218,7 @@ function PipelineTest({ onDone }: { onDone: () => Promise<void> }) {
             value={simulate}
             onChange={(e) => setSimulate(e.target.value as Simulate)}
             disabled={running}
-            className="h-9 rounded-full border border-line-strong bg-surface px-3 text-sm"
+            className="input h-9 w-auto rounded-full"
             aria-label="Simulate a failure"
           >
             <option value="">Normal run</option>

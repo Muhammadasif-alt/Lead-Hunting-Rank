@@ -45,8 +45,9 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div data-tone={tone} className="relative flex min-w-0 flex-1 flex-col">
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 bg-linear-to-r from-tone via-tone/50 to-transparent" />
         <Topbar onOpenMenu={() => setMenuOpen(true)} />
-        <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-page">{children}</div>
+        <main className="flex-1 px-4 py-6 sm:px-5 sm:py-8">
+          {/* Content starts right next to the sidebar (no centring gap) and stops at the 1440px page width. */}
+          <div className="w-full max-w-page">{children}</div>
         </main>
       </div>
     </div>
