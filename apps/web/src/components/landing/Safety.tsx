@@ -42,7 +42,7 @@ const GUARDRAILS = [
 export default function Safety() {
   return (
     <section id="safety" aria-labelledby="safety-title" className="scroll-mt-16 border-t border-line py-24">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-page px-4 sm:px-6 lg:px-8">
         <SectionHeader
           id="safety-title"
           eyebrow="Safety & control"

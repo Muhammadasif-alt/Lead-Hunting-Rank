@@ -46,7 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 bg-linear-to-r from-tone via-tone/50 to-transparent" />
         <Topbar onOpenMenu={() => setMenuOpen(true)} />
         <main className="flex-1 px-4 py-6 sm:px-8 sm:py-8">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+          <div className="mx-auto w-full max-w-page">{children}</div>
         </main>
       </div>
     </div>

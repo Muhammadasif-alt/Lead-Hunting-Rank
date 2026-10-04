@@ -43,7 +43,7 @@ export default function Navbar() {
     >
       <nav
         aria-label="Main"
-        className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-6 px-4 sm:px-6 lg:px-8"
+        className="mx-auto flex h-16 max-w-page items-center justify-between gap-6 px-4 sm:px-6 lg:px-8"
       >
         <Logo />
 
@@ -83,7 +83,7 @@ export default function Navbar() {
 
       {open ? (
         <div id="mobile-menu" className="border-t border-line md:hidden">
-          <ul className="mx-auto flex max-w-7xl flex-col px-4 py-3 sm:px-6">
+          <ul className="mx-auto flex max-w-page flex-col px-4 py-3 sm:px-6">
             {NAV_LINKS.map((link) => (
               <li key={link.href}>
                 <a
@@ -96,7 +96,7 @@ export default function Navbar() {
               </li>
             ))}
           </ul>
-          <div className="mx-auto flex max-w-7xl gap-2 border-t border-line px-4 py-4 sm:px-6">
+          <div className="mx-auto flex max-w-page gap-2 border-t border-line px-4 py-4 sm:px-6">
             <Link href="/login" className="btn btn-secondary flex-1" onClick={() => setOpen(false)}>
               Sign in
             </Link>

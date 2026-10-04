@@ -31,7 +31,7 @@ const FAQS = [
 export default function FAQ() {
   return (
     <section id="faq" aria-labelledby="faq-title" className="scroll-mt-16 border-t border-line py-24">
-      <div className="mx-auto grid max-w-6xl gap-12 px-4 sm:px-6 lg:grid-cols-3 lg:px-8">
+      <div className="mx-auto grid max-w-page gap-12 px-4 sm:px-6 lg:grid-cols-3 lg:px-8">
         <SectionHeader
           id="faq-title"
           align="left"

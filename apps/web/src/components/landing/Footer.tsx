@@ -46,7 +46,7 @@ const linkClass = "text-sm text-muted transition-colors hover:text-fg";
 export default function Footer() {
   return (
     <footer className="border-t border-line bg-surface/40">
-      <div className="mx-auto max-w-7xl px-4 pt-16 pb-10 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-page px-4 pt-16 pb-10 sm:px-6 lg:px-8">
         <div className="grid gap-12 lg:grid-cols-6">
           <div className="lg:col-span-2">
             <Logo />

@@ -26,7 +26,7 @@ const AGENTS: { icon: typeof Telescope; name: string; tone: Tone; body: string }
 export default function Agents() {
   return (
     <section aria-labelledby="agents-title" className="border-t border-line bg-surface/40 py-24">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-page px-4 sm:px-6 lg:px-8">
         <SectionHeader
           id="agents-title"
           eyebrow="Specialist agents"

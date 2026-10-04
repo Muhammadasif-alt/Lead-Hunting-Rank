@@ -5,7 +5,7 @@ import { LogoMark } from "../brand/Logo";
 export default function CTA() {
   return (
     <section aria-labelledby="cta-title" className="border-t border-line py-24">
-      <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-page px-4 sm:px-6 lg:px-8">
         <div className="card relative isolate overflow-hidden px-6 py-16 text-center sm:px-12 sm:py-20">
           <div
             aria-hidden="true"

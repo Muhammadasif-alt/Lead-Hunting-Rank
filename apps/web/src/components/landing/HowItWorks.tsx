@@ -45,7 +45,7 @@ const STEPS: { icon: typeof Target; title: string; tone: Tone; body: string }[] 
 export default function HowItWorks() {
   return (
     <section id="how-it-works" aria-labelledby="how-title" className="scroll-mt-16 border-t border-line py-24">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-page px-4 sm:px-6 lg:px-8">
         <SectionHeader
           id="how-title"
           eyebrow="How it works"

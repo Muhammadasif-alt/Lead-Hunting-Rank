@@ -25,7 +25,7 @@ export default function Hero() {
         className="pointer-events-none absolute top-24 left-[65%] -z-10 h-[280px] w-[420px] rounded-full bg-accent/10 blur-3xl"
       />
 
-      <div className="mx-auto max-w-7xl px-4 pt-20 pb-24 sm:px-6 sm:pt-28 lg:px-8">
+      <div className="mx-auto max-w-page px-4 pt-20 pb-24 sm:px-6 sm:pt-28 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <span className="badge gap-2 bg-surface/60 px-3 backdrop-blur">
             <Sparkles className="size-3.5 text-brand" aria-hidden="true" />

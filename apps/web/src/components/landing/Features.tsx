@@ -57,7 +57,7 @@ const FEATURES: { icon: typeof Bot; title: string; tone: Tone; body: string }[] 
 export default function Features() {
   return (
     <section id="product" aria-labelledby="product-title" className="scroll-mt-16 border-t border-line py-24">
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-page px-4 sm:px-6 lg:px-8">
         <SectionHeader
           id="product-title"
           eyebrow="Product"

@@ -18,11 +18,11 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
         aria-hidden="true"
         className="bg-grid pointer-events-none absolute inset-0 [mask-image:radial-gradient(ellipse_70%_60%_at_50%_0%,black,transparent)]"
       />
-      <header className="relative mx-auto flex h-16 max-w-6xl items-center px-4 sm:px-6">
+      <header className="relative mx-auto flex h-16 max-w-page items-center px-4 sm:px-6">
         <Logo />
       </header>
 
-      <main className="relative mx-auto grid max-w-6xl items-center gap-10 px-4 pb-16 pt-6 sm:px-6 lg:grid-cols-[minmax(0,440px)_1fr] lg:gap-16 lg:pt-16">
+      <main className="relative mx-auto grid max-w-page items-center gap-10 px-4 pb-16 pt-6 sm:px-6 lg:grid-cols-[minmax(0,440px)_1fr] lg:gap-16 lg:pt-16">
         <section className="card p-6 sm:p-8">
           <h1 className="text-2xl font-semibold tracking-tight">Welcome back</h1>
           <p className="mt-1.5 text-sm text-muted">Sign in to your workspace.</p>
