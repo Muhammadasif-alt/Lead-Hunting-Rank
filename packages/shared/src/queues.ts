@@ -31,6 +31,8 @@ export const JOBS = {
   externalActionExecute: 'external-action.execute',
   /** Periodic sweep: actions stuck in EXECUTING (worker died mid-call) → UNKNOWN_OUTCOME → reconcile. */
   externalActionReconcile: 'external-action.reconcile',
+  /** Periodic, side-effect-free health check of every live integration (docs/12 §83). */
+  providerHealthCheck: 'provider.health-check',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];

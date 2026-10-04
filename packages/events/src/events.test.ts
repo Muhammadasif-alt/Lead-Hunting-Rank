@@ -42,7 +42,7 @@ test('payload hash ignores key order and undefined fields', () => {
 test('registry: past-tense names, unique consumers, routes only where intended', () => {
   const consumers = new Set<string>();
   for (const [type, def] of Object.entries(EVENTS)) {
-    assert.match(type, /^[A-Z][A-Za-z]+(Created|Updated|Added|Attached|Recorded|Conflicted|Superseded|Prepared|Queued|Succeeded|Failed|Blocked|Cancelled|Waiting|Expired|Review)$/, type);
+    assert.match(type, /^[A-Z][A-Za-z]+(Created|Updated|Added|Attached|Recorded|Conflicted|Superseded|Prepared|Queued|Succeeded|Failed|Blocked|Cancelled|Waiting|Expired|Review|Connected|Disconnected|Disabled|Enabled|Degraded|Limited|Recovered|Unavailable)$/, type);
     assert.ok(def.version >= 1);
     for (const r of def.routes) {
       assert.ok(!consumers.has(r.consumer), `duplicate consumer ${r.consumer}`);

@@ -219,7 +219,7 @@ export const SCREENS: Screen[] = [
     title: "Integrations",
     icon: Plug,
     group: "Operations",
-    phase: 21,
+    phase: 5,
     tone: "system",
     summary: "Gmail, Google Calendar, LLM and lead-data providers behind clean adapters with live health.",
     capabilities: ["Connection, capability and health per provider", "Usage and cost tracking", "Credentials never reach the browser"],

@@ -13,6 +13,7 @@
     "@revenue-os/config": "workspace:*",
     "@revenue-os/database": "workspace:*",
     "@revenue-os/events": "workspace:*",
+    "@revenue-os/providers": "workspace:*",
     "@revenue-os/shared": "workspace:*",
     "bullmq": "^6.3.11",
     "ioredis": "^6.0.0"

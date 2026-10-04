@@ -193,6 +193,9 @@ importers:
       '@revenue-os/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@revenue-os/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@revenue-os/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -279,6 +282,9 @@ importers:
       '@revenue-os/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@revenue-os/providers':
+        specifier: workspace:*
+        version: link:../../packages/providers
       '@revenue-os/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -348,6 +354,31 @@ importers:
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.19.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/providers:
+    dependencies:
+      '@revenue-os/database':
+        specifier: workspace:*
+        version: link:../database
+      '@revenue-os/events':
+        specifier: workspace:*
+        version: link:../events
+      '@revenue-os/shared':
+        specifier: workspace:*
+        version: link:../shared
+      ioredis:
+        specifier: ^6.0.0
+        version: 6.0.0
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
     devDependencies:
       '@types/node':
         specifier: ^24

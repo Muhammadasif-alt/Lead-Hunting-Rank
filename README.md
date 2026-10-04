@@ -54,7 +54,7 @@ packages/
   database/   Prisma schema + client (PostgreSQL)
   events/     domain events + outbox            ← Phase 4
   policy/     ACT / ASK / WAIT / BLOCK engine   ← Phase 10
-  providers/  Gmail, Calendar, LLM, lead-data adapters ← Phase 5
+  providers/  Provider Gateway, capability interfaces, fake + real adapters
   ai/         AI runtime, agents, prompts       ← Phase 9
 infrastructure/
   docker/     docker-compose.dev.yml (Postgres + Redis)

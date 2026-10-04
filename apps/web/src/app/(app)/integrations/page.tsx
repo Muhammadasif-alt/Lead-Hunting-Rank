@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ScreenPlaceholder } from "@/components/app/ScreenPlaceholder";
+import { Integrations } from "./Integrations";
 
 export const metadata: Metadata = { title: "Integrations" };
 
 export default function Page() {
-  return <ScreenPlaceholder href="/integrations" />;
+  return <Integrations />;
 }

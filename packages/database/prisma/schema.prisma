@@ -46,6 +46,7 @@ enum EntityType {
   EVIDENCE
   FACT
   EXTERNAL_ACTION
+  INTEGRATION
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -92,6 +93,8 @@ model Workspace {
   outboxEvents           OutboxEvent[]
   externalActions        ExternalAction[]
   inboundEvents          InboundEvent[]
+  integrations           Integration[]
+  integrationHealth      IntegrationCapabilityHealth[]
 }
 
 enum UserStatus {
@@ -933,4 +936,110 @@ model InboxReceipt {
   processedAt DateTime @default(now()) @db.Timestamptz(3)
 
   @@id([consumer, eventId])
+}
+
+// ───────────────────────── 05 Integrations & providers ─────────────────────────
+// docs/12-tech-spec-8-provider-architecture.md. A provider is code (catalog in packages/providers); an Integration is
+// one workspace's connection to it. Credentials are referenced, never stored in `configuration` (§4-5, §23).
+
+enum IntegrationStatus {
+  DISCONNECTED
+  CONNECTING
+  ACTIVE
+  DEGRADED
+  AUTH_EXPIRED
+  RATE_LIMITED
+  ERROR
+  DISABLED
+}
+
+enum ProviderHealthState {
+  HEALTHY
+  DEGRADED
+  RATE_LIMITED
+  AUTH_REQUIRED
+  UNAVAILABLE
+}
+
+enum ProviderCallStatus {
+  SUCCEEDED
+  FAILED
+}
+
+model Integration {
+  id                String            @id @default(uuid()) @db.Uuid
+  workspaceId       String            @db.Uuid
+  provider          String
+  category          String
+  name              String
+  /// Provider-side account identity (e.g. mailbox address). Reconnecting the same account reuses this row (docs/12 §120).
+  accountRef        String            @default("default")
+  status            IntegrationStatus @default(ACTIVE)
+  capabilities      String[]
+  /// Router preference among integrations with the same capability — lower first (docs/12 §130).
+  priority          Int               @default(100)
+  configuration     Json              @default("{}")
+  credentialRef     String?
+  connectedBy       String?           @db.Uuid
+  connectedAt       DateTime?         @db.Timestamptz(3)
+  disconnectedAt    DateTime?         @db.Timestamptz(3)
+  lastHealthCheckAt DateTime?         @db.Timestamptz(3)
+  lastSuccessAt     DateTime?         @db.Timestamptz(3)
+  lastErrorAt       DateTime?         @db.Timestamptz(3)
+  lastError         String?
+  createdAt         DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime          @updatedAt @db.Timestamptz(3)
+  version           Int               @default(1)
+
+  workspace Workspace                     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  health    IntegrationCapabilityHealth[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, provider, accountRef])
+  @@index([workspaceId, status])
+}
+
+/** Health per capability (docs/12 §5, §81-82): Gmail can read fine while sending is rate-limited. */
+model IntegrationCapabilityHealth {
+  workspaceId   String              @db.Uuid
+  integrationId String              @db.Uuid
+  capability    String
+  state         ProviderHealthState
+  reason        String?
+  lastSuccessAt DateTime?           @db.Timestamptz(3)
+  lastFailureAt DateTime?           @db.Timestamptz(3)
+  checkedAt     DateTime            @default(now()) @db.Timestamptz(3)
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  integration Integration @relation(fields: [workspaceId, integrationId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@id([integrationId, capability])
+  @@index([workspaceId])
+}
+
+/**
+ * One provider call: usage, latency, cost (docs/12 §42, §110-111). Telemetry, not audit — plain ids without foreign
+ * keys, so history survives a disconnected or removed integration. Unknown cost stays null, never invented.
+ */
+model ProviderCallRecord {
+  id             String             @id @default(uuid()) @db.Uuid
+  workspaceId    String             @db.Uuid
+  integrationId  String?            @db.Uuid
+  provider       String
+  capability     String
+  operation      String
+  status         ProviderCallStatus
+  errorKind      String?
+  durationMs     Int
+  units          Int?
+  costMinor      Int?
+  costIsEstimate Boolean            @default(false)
+  currency       String             @default("USD") @db.Char(3)
+  entityType     String?
+  entityId       String?
+  correlationId  String?
+  startedAt      DateTime           @db.Timestamptz(3)
+
+  @@index([workspaceId, startedAt])
+  @@index([integrationId, startedAt])
 }

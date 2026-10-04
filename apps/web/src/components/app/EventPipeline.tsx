@@ -142,7 +142,7 @@ const STEPS = [
   { key: "saved", label: "Saved with its event", detail: "One database transaction: action + event + outbox" },
   { key: "queued", label: "Handed to the queue", detail: "Dispatcher moved the event into BullMQ" },
   { key: "worker", label: "Worker picked it up", detail: "Claimed atomically — no other worker can run it" },
-  { key: "provider", label: "Provider confirmed", detail: "Fake provider (real ones arrive in Phase 5)" },
+  { key: "provider", label: "Provider confirmed", detail: "Diagnostics test provider — never a real inbox" },
   { key: "result", label: "Result recorded", detail: "Success event written — the flow is traceable end to end" },
 ] as const;
 

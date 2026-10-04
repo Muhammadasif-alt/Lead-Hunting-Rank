@@ -36,6 +36,7 @@ export const PERMISSIONS = {
   'knowledge.approve': { class: 'E', description: 'Publish knowledge used by AI' },
   'policy.read': { class: 'A', description: 'View policies' },
   'policy.manage': { class: 'E', description: 'Change policies and autonomy levels' },
+  'integration.read': { class: 'A', description: 'View integrations, their health and usage' },
   'integration.manage': { class: 'E', description: 'Connect and disconnect integrations' },
   'member.manage': { class: 'E', description: 'Invite members and change roles' },
   'data.export': { class: 'E', description: 'Bulk export data' },
@@ -58,6 +59,7 @@ const READ: PermissionKey[] = [
   'opportunity.read',
   'knowledge.read',
   'policy.read',
+  'integration.read',
 ];
 
 /** Default role → permission grants seeded into every workspace (docs/10 §8-14). */

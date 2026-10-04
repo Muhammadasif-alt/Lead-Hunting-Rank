@@ -38,11 +38,31 @@ export interface EventPayloads {
   ExternalActionClaimExpired: { externalActionId: string; actionType: string; claimedAt: string };
   /** Reconciliation could not tell whether the provider acted. A human decides (Phase 21 turns this into attention). */
   ExternalActionNeedsReview: { externalActionId: string; actionType: string; reason: string };
+  // integrations (docs/12 §129) — never carry credentials
+  IntegrationConnected: { integrationId: string; provider: string; reconnected: boolean };
+  IntegrationDisconnected: { integrationId: string; provider: string };
+  IntegrationDisabled: { integrationId: string; provider: string };
+  IntegrationEnabled: { integrationId: string; provider: string };
+  /** Capability health transitions, observed from real calls or health checks. */
+  IntegrationDegraded: ProviderHealthPayload;
+  IntegrationAuthExpired: ProviderHealthPayload;
+  ProviderRateLimited: ProviderHealthPayload;
+  ProviderUnavailable: ProviderHealthPayload;
+  ProviderRecovered: ProviderHealthPayload;
+}
+
+export interface ProviderHealthPayload {
+  integrationId: string;
+  provider: string;
+  capability: string;
+  from: string | null;
+  to: string;
+  reason: string | null;
 }
 
 export type EventType = keyof EventPayloads;
 
-export type AggregateType = 'WORKSPACE' | 'COMPANY' | 'PERSON' | 'EMPLOYMENT' | 'CONTACT_POINT' | 'EVIDENCE' | 'FACT' | 'EXTERNAL_ACTION';
+export type AggregateType = 'WORKSPACE' | 'COMPANY' | 'PERSON' | 'EMPLOYMENT' | 'CONTACT_POINT' | 'EVIDENCE' | 'FACT' | 'EXTERNAL_ACTION' | 'INTEGRATION';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -69,7 +89,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -122,6 +142,15 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
     routes: [{ ...executeExternalAction, consumer: 'outbound.reconcile-external-action', priority: PRIORITY.HIGH }],
   },
   ExternalActionNeedsReview: entity('execution', 'EXTERNAL_ACTION', 'Outcome unknown after reconciliation — human review'),
+  IntegrationConnected: entity('integrations', 'INTEGRATION', 'A workspace connected (or reconnected) a provider'),
+  IntegrationDisconnected: entity('integrations', 'INTEGRATION', 'A provider was disconnected; history and mappings are kept'),
+  IntegrationDisabled: entity('integrations', 'INTEGRATION', 'New provider calls through this integration were stopped'),
+  IntegrationEnabled: entity('integrations', 'INTEGRATION', 'A disabled integration was turned back on'),
+  IntegrationDegraded: entity('integrations', 'INTEGRATION', 'A capability is failing intermittently'),
+  IntegrationAuthExpired: entity('integrations', 'INTEGRATION', 'The provider no longer accepts our credentials — reconnect needed'),
+  ProviderRateLimited: entity('integrations', 'INTEGRATION', 'The provider asked us to slow down for a capability'),
+  ProviderUnavailable: entity('integrations', 'INTEGRATION', 'A capability is down (circuit open)'),
+  ProviderRecovered: entity('integrations', 'INTEGRATION', 'A capability is healthy again'),
 };
 
 export function eventDefinition(type: string): EventDefinition | undefined {

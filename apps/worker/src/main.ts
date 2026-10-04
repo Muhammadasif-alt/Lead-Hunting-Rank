@@ -12,6 +12,8 @@ import {
   type JobHandler,
 } from '@revenue-os/events/runtime';
 import { FAKE_SEND_ACTION, FakeSideEffectProvider, RedisFakeProviderStore } from '@revenue-os/events/testing';
+import { createEmailSendExecutor, EMAIL_SEND_ACTION } from '@revenue-os/providers';
+import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
 import { describeError, JOBS, QUEUES, queuePrefix, type DiagnosticsPingResult } from '@revenue-os/shared';
 import { createLogger } from '@revenue-os/shared/server';
 import { Redis } from 'ioredis';
@@ -28,13 +30,29 @@ connection.on('error', () => undefined); // logged once per distinct error by th
 const producer = new QueueProducer(config.REDIS_URL, prefix);
 const metrics = new WorkerMetrics();
 
-// Side-effect adapters by action type. Real providers (Gmail, Calendar…) register here from Phase 5.
-// The fake one backs the pipeline self-test and never runs in production.
-const executors: Record<string, ActionExecutor> = {};
+// Provider Gateway (Phase 5): every provider call goes through it — routing, limits, circuit breaker, usage, health.
+const providers = createProviderRuntime(db, {
+  appEnv: config.APP_ENV,
+  storagePath: config.STORAGE_LOCAL_PATH,
+  redis: connection,
+  prefix,
+  logger: { warn: (obj, msg) => logger.warn(obj, msg) },
+});
+
+// Side-effect adapters by action type. Each one calls its capability through the gateway, never a vendor directly.
+// The diagnostics fake backs the pipeline self-test and never runs in production.
+const executors: Record<string, ActionExecutor> = {
+  [EMAIL_SEND_ACTION]: createEmailSendExecutor(providers.gateway),
+};
 if (config.APP_ENV !== 'production') {
   executors[FAKE_SEND_ACTION] = new FakeSideEffectProvider(new RedisFakeProviderStore(connection, prefix), 150);
 }
 const actions = externalActionHandlers(db, { executors });
+
+const providerHealthCheck: JobHandler = {
+  timeoutMs: 120_000,
+  handle: async () => ({ checked: await checkAllIntegrations(db, providers) }),
+};
 
 const ping: JobHandler = {
   timeoutMs: 5_000,
@@ -54,7 +72,11 @@ const workers = [
     db,
     logger,
     metrics,
-    handlers: { [JOBS.diagnosticsPing]: ping, [JOBS.externalActionReconcile]: actions[JOBS.externalActionReconcile] },
+    handlers: {
+      [JOBS.diagnosticsPing]: ping,
+      [JOBS.externalActionReconcile]: actions[JOBS.externalActionReconcile],
+      [JOBS.providerHealthCheck]: providerHealthCheck,
+    },
   }),
   createQueueWorker({
     queue: QUEUES.outbound,
@@ -90,6 +112,10 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('external-action-reconcile', { every: 60_000 }, { name: JOBS.externalActionReconcile, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register reconcile schedule'));
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('provider-health-check', { every: 5 * 60_000 }, { name: JOBS.providerHealthCheck, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register provider health schedule'));
 
 let shuttingDown = false;
 async function shutdown(signal: string) {

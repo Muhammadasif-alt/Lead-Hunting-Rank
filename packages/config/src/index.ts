@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { z } from 'zod';
 
 /**
@@ -43,17 +43,17 @@ const configSchema = z
 
 export type AppConfig = z.output<typeof configSchema>;
 
-/** Walks up from `startDir` to find the repo-root `.env` and loads it (existing env vars win). */
-function loadDotEnv(startDir: string): void {
+/** Walks up from `startDir` to find the repo-root `.env` and loads it (existing env vars win). Returns its directory. */
+function loadDotEnv(startDir: string): string | null {
   let dir = startDir;
   while (true) {
     const candidate = join(dir, '.env');
     if (existsSync(candidate)) {
       process.loadEnvFile(candidate);
-      return;
+      return dir;
     }
     const parent = dirname(dir);
-    if (parent === dir) return;
+    if (parent === dir) return null;
     dir = parent;
   }
 }
@@ -62,8 +62,11 @@ let cached: AppConfig | undefined;
 
 export function loadConfig(): AppConfig {
   if (cached) return cached;
-  loadDotEnv(process.cwd());
-  cached = parseConfig(process.env);
+  const envDir = loadDotEnv(process.cwd());
+  const parsed = parseConfig(process.env);
+  // A relative storage path means "relative to the repo root (.env)", so API and worker share one directory.
+  const storagePath = isAbsolute(parsed.STORAGE_LOCAL_PATH) ? parsed.STORAGE_LOCAL_PATH : resolve(envDir ?? process.cwd(), parsed.STORAGE_LOCAL_PATH);
+  cached = { ...parsed, STORAGE_LOCAL_PATH: storagePath };
   return cached;
 }
 
