@@ -1,0 +1,5 @@
+# Prisma "agent skills" installed locally by the prisma CLI prompt — not part of the project
+.agents/
+.claude/
+.windsurf/
+skills-lock.json
