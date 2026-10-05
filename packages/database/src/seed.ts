@@ -63,7 +63,8 @@ try {
     console.log(`✓ Seeded workspace "${workspace.name}" (slug: ${workspace.slug})`);
     console.log(`  Sign in at http://localhost:3000/login — password for every demo user: ${process.env.SEED_PASSWORD ? '(SEED_PASSWORD)' : PASSWORD}`);
     for (const u of USERS) console.log(`  ${u.role.padEnd(10)} ${u.email}`);
-  }, { timeout: 30_000 });
+    // maxWait: on a cold Docker database the first connection can take longer than the 2 s default (P2028).
+  }, { timeout: 60_000, maxWait: 20_000 });
 } finally {
   await db.$disconnect();
 }
