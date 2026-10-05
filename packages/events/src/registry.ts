@@ -32,6 +32,19 @@ export interface EventPayloads {
   DuplicateCandidateRejected: { candidateId: string; entityType: string; leftId: string; rightId: string };
   /** Source was merged into target; the source row is archived and kept for history. */
   CompaniesMerged: { mergeId: string; sourceCompanyId: string; targetCompanyId: string; mode: 'MANUAL' | 'AUTO'; candidateId: string | null };
+  // discovery (docs/07 §60-62, docs/17 §46-51)
+  MarketCreated: { marketId: string; marketKey: string };
+  DiscoveryMissionStarted: { missionId: string; marketId: string; mode: string };
+  /** A round finished and coverage was assessed. `decision` CONTINUE schedules the next round. */
+  DiscoveryRoundCompleted: { missionId: string; round: number; newUnique: number; cumulativeUnique: number; decision: 'CONTINUE' | 'COMPLETE' };
+  DiscoveryMissionPaused: { missionId: string; reason: string | null };
+  DiscoveryMissionResumed: { missionId: string; status: string };
+  DiscoveryMissionWaiting: { missionId: string; reason: string; retryAt: string };
+  DiscoveryMissionBlocked: { missionId: string; reason: string };
+  DiscoveryMissionCompleted: { missionId: string; stopReason: string; coverageConfidence: string; uniqueCompanies: number };
+  DiscoveryMissionFailed: { missionId: string; reason: string };
+  /** A mission found a business (new or already known) — research/enrichment eligibility hooks here (Phase 8). */
+  CompanyDiscovered: { companyId: string; missionId: string; observationId: string; provider: string; outcome: 'CREATED' | 'MATCHED_EXISTING' };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -83,7 +96,9 @@ export type AggregateType =
   | 'FACT'
   | 'EXTERNAL_ACTION'
   | 'INTEGRATION'
-  | 'ENTITY_MATCH_CANDIDATE';
+  | 'ENTITY_MATCH_CANDIDATE'
+  | 'MARKET'
+  | 'DISCOVERY_MISSION';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -110,7 +125,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -124,6 +139,15 @@ const executeExternalAction: EventRoute = {
   job: JOBS.externalActionExecute,
   priority: PRIORITY.NORMAL,
   toJobData: (e) => ({ externalActionId: e.aggregateId, schemaVersion: 1 }),
+};
+
+/** Discovery work runs one bounded round per job; the job reloads the mission and continues from its DB state. */
+const advanceMission: EventRoute = {
+  consumer: 'discovery.advance-mission',
+  queue: QUEUES.discovery,
+  job: JOBS.discoveryAdvance,
+  priority: PRIORITY.BACKGROUND,
+  toJobData: (e) => ({ missionId: e.aggregateId, schemaVersion: 1 }),
 };
 
 const entity = (owner: EventDefinition['owner'], aggregateType: AggregateType, description: string, pii: 'none' | 'low' = 'none'): EventDefinition => ({
@@ -153,6 +177,19 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   DuplicateCandidateDetected: entity('crm', 'ENTITY_MATCH_CANDIDATE', 'Two records may be the same business — review needed'),
   DuplicateCandidateRejected: entity('crm', 'ENTITY_MATCH_CANDIDATE', 'A human said two records are different businesses'),
   CompaniesMerged: entity('crm', 'COMPANY', 'Two company records were merged; source history preserved'),
+  MarketCreated: entity('discovery', 'MARKET', 'A market (territory + industry) was defined'),
+  DiscoveryMissionStarted: { ...entity('discovery', 'DISCOVERY_MISSION', 'A discovery mission was started'), routes: [advanceMission] },
+  DiscoveryRoundCompleted: {
+    ...entity('discovery', 'DISCOVERY_MISSION', 'A discovery round finished and coverage was assessed'),
+    routes: [{ ...advanceMission, consumer: 'discovery.next-round' }],
+  },
+  DiscoveryMissionPaused: entity('discovery', 'DISCOVERY_MISSION', 'A person paused a discovery mission'),
+  DiscoveryMissionResumed: { ...entity('discovery', 'DISCOVERY_MISSION', 'A paused, waiting or blocked mission continues'), routes: [{ ...advanceMission, consumer: 'discovery.resume-mission' }] },
+  DiscoveryMissionWaiting: entity('discovery', 'DISCOVERY_MISSION', 'A mission waits on a temporary dependency (e.g. rate limit)'),
+  DiscoveryMissionBlocked: entity('discovery', 'DISCOVERY_MISSION', 'A mission cannot continue until something changes (e.g. no lead source)'),
+  DiscoveryMissionCompleted: entity('discovery', 'DISCOVERY_MISSION', 'A mission finished by its stopping criteria (not a claim of 100% coverage)'),
+  DiscoveryMissionFailed: entity('discovery', 'DISCOVERY_MISSION', 'A mission failed unrecoverably'),
+  CompanyDiscovered: entity('discovery', 'COMPANY', 'A discovery mission found a business (new or already known)'),
   EvidenceRecorded: entity('evidence', 'EVIDENCE', 'Evidence from a source was stored'),
   FactRecorded: entity('evidence', 'FACT', 'A fact was created or confirmed by new evidence'),
   FactConflicted: entity('evidence', 'FACT', 'New evidence disagrees with an existing fact — needs resolution'),

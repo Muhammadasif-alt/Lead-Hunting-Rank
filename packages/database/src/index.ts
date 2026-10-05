@@ -6,6 +6,10 @@ export { Prisma } from './generated/prisma/client.js';
 export type {
   Company,
   CompanyAlias,
+  CoverageAssessment,
+  DiscoveryMission,
+  DiscoveryObservation,
+  DiscoveryQuery,
   ContactPoint,
   DeadLetterRecord,
   DomainEvent,
@@ -17,6 +21,7 @@ export type {
   Fact,
   Integration,
   IntegrationCapabilityHealth,
+  Market,
   OutboxEvent,
   Person,
   ProviderCallRecord,

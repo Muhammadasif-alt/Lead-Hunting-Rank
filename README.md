@@ -55,6 +55,7 @@ packages/
   events/     domain events + outbox            ← Phase 4
   policy/     ACT / ASK / WAIT / BLOCK engine   ← Phase 10
   providers/  Provider Gateway, capability interfaces, fake + real adapters
+  domain/     API + worker dono ki shared domain logic (entity resolution, merge, evidence, discovery engine)
   ai/         AI runtime, agents, prompts       ← Phase 9
 infrastructure/
   docker/     docker-compose.dev.yml (Postgres + Redis)

@@ -7,7 +7,7 @@ export const ROADMAP: { phase: number; name: string; done: boolean }[] = [
   { phase: 4, name: "Events, outbox + queues", done: true },
   { phase: 5, name: "Provider gateway", done: true },
   { phase: 6, name: "CRM core — Company 360", done: true },
-  { phase: 7, name: "Lead Hunter", done: false },
+  { phase: 7, name: "Lead Hunter", done: true },
   { phase: 8, name: "Research + intelligence", done: false },
   { phase: 9, name: "AI runtime + agents", done: false },
   { phase: 10, name: "Campaigns + outreach", done: false },

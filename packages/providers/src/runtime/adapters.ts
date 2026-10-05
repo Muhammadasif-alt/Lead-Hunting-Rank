@@ -6,7 +6,7 @@ import type { Capability } from '../core/capabilities.js';
 import type { ProviderAdapter } from '../core/interfaces.js';
 import { FakeCalendarProvider } from '../fakes/calendar.js';
 import { FakeEmailProvider, MemoryMailboxStore, RedisMailboxStore } from '../fakes/email.js';
-import { FakeLeadProvider } from '../fakes/leads.js';
+import { FakeDirectoryProvider, FakeLeadProvider } from '../fakes/leads.js';
 import { FakeLLMProvider } from '../fakes/llm.js';
 import { FakeNotificationProvider } from '../fakes/notification.js';
 import { FakeVerificationProvider } from '../fakes/verification.js';
@@ -40,6 +40,7 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
   const shared = {
     fake_calendar: new FakeCalendarProvider(),
     fake_leads: new FakeLeadProvider(),
+    fake_directory: new FakeDirectoryProvider(),
     fake_verification: new FakeVerificationProvider(),
     fake_llm: new FakeLLMProvider(),
     fake_notifications: new FakeNotificationProvider(),
@@ -78,6 +79,7 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
 const DEFAULT_RATE_LIMITS: Record<string, ProviderBinding['rateLimit']> = {
   fake_email: { limit: 60, windowMs: 60_000 },
   fake_leads: { limit: 120, windowMs: 60_000 },
+  fake_directory: { limit: 120, windowMs: 60_000 },
 };
 
 export function toBinding(integration: Pick<Integration, 'id' | 'workspaceId' | 'provider' | 'capabilities'>, factory: AdapterFactory): ProviderBinding | null {

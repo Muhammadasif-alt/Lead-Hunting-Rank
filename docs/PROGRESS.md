@@ -14,7 +14,7 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 4 | Events + Outbox + Queue | ✅ done 2026-10-04 |
 | 5 | Provider Gateway (fake providers first) | ✅ done 2026-10-04 |
 | 6 | CRM Core — Company 360 | ✅ done 2026-10-04 |
-| 7 | Lead Hunter — Market Exhaust | ⬜ |
+| 7 | Lead Hunter — Market Exhaust | ✅ done 2026-10-05 |
 | 8 … 24 | Research → AI → Policy → Campaigns → Inbox → … → Autonomy rollout | ⬜ |
 
 ## Phase 0 — Definition of Done
@@ -101,6 +101,20 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] Screens: Companies list, Company 360° (Overview, People, Intelligence, Evidence, Activity — Digital presence / Conversations / Opportunities / Memory shown with their phase; ICP / Opportunity / Intent shown as "Not scored", never faked), Duplicate review (side-by-side, why they match / what disagrees, keep left / keep right / not the same); works from 360 px without horizontal scroll
 - [x] Tests: scoring unit tests (shared) + integration tests (detection, safe auto-merge, manual merge history, rejection, advisory lock, archive/restore, contact points, the six questions, HTTP role checks)
 - Deferred by plan: research-driven company fields, website, digital presence and scores (Phase 8–9), person-level entity resolution and Prospect 360 intelligence (Phase 8), company notes (Phase 14 with memory), bulk import (Phase 22), re-pointing ExternalActions on merge (none reference companies before Phase 10)
+
+## Phase 7 — Definition of Done
+- [x] Schema: Market (one per place + industry via `marketKey`), DiscoveryMission (mode, budgets, docs/09 §16 state machine incl. PAUSED/WAITING/BLOCKED, counters, coverage, stop reason, worker lease), DiscoveryQuery (strategy × source, never repeated in a mission, cursor/pages persisted), DiscoveryObservation (raw provider record, unique per mission + provider + record id), CoverageAssessment (per round)
+- [x] `packages/domain` (`@revenue-os/domain`): Nest-free domain logic shared by API and worker — context/audit, entity resolution, company create, merge, evidence/facts, discovery engine
+- [x] Natural-language interpretation (deterministic, `@revenue-os/shared/discovery`): "Austin, Texas ke landscapers Market Exhaust mode mein find karo" → market + mode + website filter; the person confirms the structured form before anything runs
+- [x] Quick / Deep / Market Exhaust profiles with real budgets (rounds, queries, provider calls, pages); industry taxonomy with related categories the user can toggle; query families: main category, related categories, keyword and geo variations
+- [x] Pipeline Mission → query planning → provider search (through the Provider Gateway, pinned per source) → observation → normalization → entity resolution (HIGH = attach, MEDIUM/LOW = new company + review candidate) → Company → Evidence (provider + observed_at) + facts (website/phone/address/category; disagreeing sources become CONFLICTED) + provider mappings
+- [x] Market Exhaust loop: one bounded round per job (event-chained via the outbox), marginal-yield measurement, stops on saturation / strategies exhausted / round limit / budgets / person; resumable after a crash (lease + sweep every minute); rate limits → WAITING with retry time; no source → BLOCKED
+- [x] Coverage shown honestly: sources searched, queries executed, raw listings, unique businesses, duplicate rate, per-round yield, coverage confidence LOW/MEDIUM/HIGH with reasons — HIGH needs measured saturation over ≥3 rounds, ≥2 sources and ≥2 query families; never "100% found"
+- [x] Second fake source (`fake_directory`) over the same fictional market as `fake_leads` — different formats, ids, coverage and result caps, occasional old phone number — so cross-source dedupe and saturation are real
+- [x] API `/api/v1/discovery-missions` (preview, start 202, list, detail with allowedActions, companies with filters, pause/resume/stop with optimistic concurrency) and `/markets`; `market.read` / `market.run`; every command audited + event in the same transaction; one active mission per market (409 `MISSION_ALREADY_RUNNING`)
+- [x] Screens: Lead Hunter (describe → understood as → editable market, categories, depth, sources with health, recent hunts, saved markets) and live hunt view (counters, per-round saturation bars, coverage card, activity feed, results table with website/phone/outcome filters → Company 360); no fake enrichment options
+- [x] Tests: discovery unit tests (interpretation, planning, coverage), fake source tests, engine integration (Market Exhaust Austin landscaping on 2 sources → 72 → 11 → 5 → 0 new, SATURATED, HIGH; existing company matched not duplicated; BLOCKED; WAITING → resume; pause wins; QUICK; re-run creates no new companies), API integration + HTTP role checks
+- Deferred by plan: enrichment (website/social/owners/verification, Phase 8) — state ENRICHING is skipped; SSE live updates (Phase 20, the hunt page polls); radius/ZIP/multi-city territories and map drawing; saved-market monitoring and change detection (Phase 15); AI interpreter (Phase 9, must produce the same structured shape); paid-call budget reservation (first paid lead vendor)
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

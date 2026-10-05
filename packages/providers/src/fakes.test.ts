@@ -9,7 +9,7 @@ import { CAPABILITIES } from './core/capabilities.js';
 import { ProviderCallError } from './core/errors.js';
 import { FakeCalendarProvider } from './fakes/calendar.js';
 import { FakeEmailProvider } from './fakes/email.js';
-import { FakeLeadProvider } from './fakes/leads.js';
+import { FakeDirectoryProvider, FakeLeadProvider } from './fakes/leads.js';
 import { FakeLLMProvider } from './fakes/llm.js';
 import { FakeNotificationProvider } from './fakes/notification.js';
 import { FakeVerificationProvider } from './fakes/verification.js';
@@ -75,24 +75,43 @@ describe('FakeCalendarProvider', () => {
   });
 });
 
-describe('FakeLeadProvider', () => {
+describe('Fake lead sources', () => {
   const input = { location: { country: 'US', region: 'TX', city: 'Austin' }, industry: 'landscaping' };
-  test('same query → same market; paginates to exhaustion', async () => {
-    const leads = new FakeLeadProvider();
-    const all = [];
+  const all = async (source: FakeLeadProvider | FakeDirectoryProvider, extra: { industry?: string; query?: string } = {}) => {
+    const out = [];
     let cursor: string | null = null;
     do {
-      const page = await leads.searchCompanies({ ...input, cursor, pageSize: 25 }, o());
-      all.push(...page.observations);
+      const page = await source.searchCompanies({ ...input, ...extra, cursor, pageSize: 20 }, o());
+      out.push(...page.observations);
       cursor = page.nextCursor;
     } while (cursor);
+    return out;
+  };
+
+  test('same query → same results; paginates to exhaustion; results per query are capped', async () => {
+    const first = await all(new FakeLeadProvider());
     const again = await new FakeLeadProvider().searchCompanies({ ...input, pageSize: 5 }, o());
-    assert.deepEqual(again.observations.map((x) => x.name), all.slice(0, 5).map((x) => x.name));
-    assert.ok(all.length >= 40);
-    assert.ok(all.some((x) => x.domain === null), 'some businesses have no website');
-    const phones = all.map((x) => x.phone);
+    assert.deepEqual(again.observations.map((x) => x.name), first.slice(0, 5).map((x) => x.name));
+    assert.ok(first.length >= 30 && first.length <= 50, `capped result set (${first.length})`);
+    assert.ok(first.some((x) => x.domain === null), 'some businesses have no website');
+    const phones = first.map((x) => x.phone);
     assert.ok(new Set(phones).size < phones.length, 'contains duplicate listings for entity resolution');
-    assert.equal(all[0]!.raw.business_title, all[0]!.name, 'vendor naming kept in raw, canonical name outside');
+    assert.equal(first[0]!.raw.business_title, first[0]!.name, 'vendor naming kept in raw, canonical name outside');
+  });
+
+  test('related categories and query variations surface businesses the main query missed', async () => {
+    const main = new Set((await all(new FakeLeadProvider())).map((x) => x.sourceRecordId));
+    assert.ok((await all(new FakeLeadProvider(), { industry: 'irrigation' })).some((x) => !main.has(x.sourceRecordId)));
+    assert.ok((await all(new FakeLeadProvider(), { query: 'commercial' })).some((x) => !main.has(x.sourceRecordId)));
+  });
+
+  test('two sources describe one market differently — same businesses, different formats and ids', async () => {
+    const leadDomains = new Set((await all(new FakeLeadProvider())).map((x) => x.domain).filter(Boolean));
+    const directory = await all(new FakeDirectoryProvider());
+    assert.ok(directory.some((x) => x.domain && leadDomains.has(x.domain)), 'the sources overlap');
+    assert.ok(directory.some((x) => x.domain && !leadDomains.has(x.domain)), 'and each knows businesses the other did not return');
+    assert.ok(directory.every((x) => x.sourceRecordId.startsWith('bd-')));
+    assert.ok(directory.every((x) => /^\(\d{3}\) \d{3}-\d{4}$/.test(x.phone!)), 'directory formats phones its own way');
   });
   test('rejects uncovered countries', async () => {
     await assert.rejects(new FakeLeadProvider().searchCompanies({ ...input, location: { country: 'ZZ' } }, o()), (e) => e instanceof ProviderCallError && e.kind === 'INVALID_REQUEST');

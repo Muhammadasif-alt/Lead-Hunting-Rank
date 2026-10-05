@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import type { Company, Fact, MergeMode, Prisma } from '@revenue-os/database';
 import { recordEvent } from '@revenue-os/events';
 import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from '@revenue-os/shared';
-import { actorUserId, writeAudit, type ServiceContext, type Tx } from '../../domain/service-context.js';
+import { actorUserId, writeAudit, type ServiceContext, type Tx } from '../context.js';
 
 export interface MergeInput {
   sourceId: string;

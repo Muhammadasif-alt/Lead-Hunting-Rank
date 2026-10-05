@@ -16,6 +16,7 @@
     "@nestjs/platform-express": "^12.1.2",
     "@revenue-os/config": "workspace:*",
     "@revenue-os/database": "workspace:*",
+    "@revenue-os/domain": "workspace:*",
     "@revenue-os/events": "workspace:*",
     "@revenue-os/providers": "workspace:*",
     "@revenue-os/shared": "workspace:*",

@@ -33,6 +33,10 @@ export const JOBS = {
   externalActionReconcile: 'external-action.reconcile',
   /** Periodic, side-effect-free health check of every live integration (docs/12 §83). */
   providerHealthCheck: 'provider.health-check',
+  /** Advance one discovery mission by (at most) one round from its current DB state. Payload: DiscoveryAdvanceJobData. */
+  discoveryAdvance: 'discovery.mission.advance',
+  /** Periodic: missions whose worker died mid-round, or whose WAITING retry time has come, get advanced again. */
+  discoverySweep: 'discovery.sweep',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -66,6 +70,12 @@ export interface DiagnosticsPingResult {
   workerId: string;
   processedAt: string;
   correlationId: string;
+}
+
+export interface DiscoveryAdvanceJobData extends JobTracing {
+  workspaceId: string;
+  missionId: string;
+  schemaVersion: 1;
 }
 
 export interface ExternalActionJobData extends JobTracing {

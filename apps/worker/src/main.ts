@@ -1,10 +1,13 @@
 import { hostname } from 'node:os';
 import { loadConfig } from '@revenue-os/config';
 import { createPrismaClient } from '@revenue-os/database';
+import { advanceMission, failMission, sweepDiscoveryMissions } from '@revenue-os/domain';
 import type { ActionExecutor } from '@revenue-os/events';
 import {
   createQueueWorker,
+  DEFAULT_ATTEMPTS,
   externalActionHandlers,
+  JOB_RETENTION,
   QueueProducer,
   startHeartbeat,
   startOutboxLoop,
@@ -14,7 +17,15 @@ import {
 import { FAKE_SEND_ACTION, FakeSideEffectProvider, RedisFakeProviderStore } from '@revenue-os/events/testing';
 import { createEmailSendExecutor, EMAIL_SEND_ACTION } from '@revenue-os/providers';
 import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
-import { describeError, JOBS, QUEUES, queuePrefix, type DiagnosticsPingResult } from '@revenue-os/shared';
+import {
+  describeError,
+  JOBS,
+  PRIORITY,
+  QUEUES,
+  queuePrefix,
+  type DiagnosticsPingResult,
+  type DiscoveryAdvanceJobData,
+} from '@revenue-os/shared';
 import { createLogger } from '@revenue-os/shared/server';
 import { Redis } from 'ioredis';
 
@@ -54,6 +65,36 @@ const providerHealthCheck: JobHandler = {
   handle: async () => ({ checked: await checkAllIntegrations(db, providers) }),
 };
 
+// Lead Hunter (Phase 7): one bounded round per job; the mission's DB state says where to continue.
+const discoveryAdvance: JobHandler = {
+  timeoutMs: 10 * 60_000,
+  handle: async (data, ctx) => {
+    const { missionId } = data as unknown as DiscoveryAdvanceJobData;
+    try {
+      return await advanceMission({ db, gateway: providers.gateway, workerId }, missionId);
+    } catch (err) {
+      // Out of retries on something unexpected: settle the mission so it doesn't look busy forever.
+      if (ctx.finalAttempt) await failMission(db, missionId, `Unexpected error: ${describeError(err)}`);
+      throw err;
+    }
+  },
+};
+
+const discoverySweep: JobHandler = {
+  timeoutMs: 60_000,
+  handle: async (data) =>
+    sweepDiscoveryMissions(db, async ({ workspaceId, missionId, jobId }) => {
+      const job: DiscoveryAdvanceJobData = { workspaceId, missionId, schemaVersion: 1, correlationId: data.correlationId };
+      await producer.queue(QUEUES.discovery).add(JOBS.discoveryAdvance, job, {
+        jobId,
+        priority: PRIORITY.BACKGROUND,
+        attempts: DEFAULT_ATTEMPTS,
+        backoff: { type: 'custom' },
+        ...JOB_RETENTION,
+      });
+    }),
+};
+
 const ping: JobHandler = {
   timeoutMs: 5_000,
   handle: async (data): Promise<DiagnosticsPingResult> => ({
@@ -76,7 +117,18 @@ const workers = [
       [JOBS.diagnosticsPing]: ping,
       [JOBS.externalActionReconcile]: actions[JOBS.externalActionReconcile],
       [JOBS.providerHealthCheck]: providerHealthCheck,
+      [JOBS.discoverySweep]: discoverySweep,
     },
+  }),
+  createQueueWorker({
+    queue: QUEUES.discovery,
+    prefix,
+    connection,
+    db,
+    logger,
+    metrics,
+    concurrency: 2,
+    handlers: { [JOBS.discoveryAdvance]: discoveryAdvance },
   }),
   createQueueWorker({
     queue: QUEUES.outbound,
@@ -116,6 +168,11 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('provider-health-check', { every: 5 * 60_000 }, { name: JOBS.providerHealthCheck, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register provider health schedule'));
+// Discovery: wakes WAITING missions whose retry time has come and re-queues missions whose worker died mid-round.
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('discovery-sweep', { every: 60_000 }, { name: JOBS.discoverySweep, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register discovery sweep schedule'));
 
 let shuttingDown = false;
 async function shutdown(signal: string) {

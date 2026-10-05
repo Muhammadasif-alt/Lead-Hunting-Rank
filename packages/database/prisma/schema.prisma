@@ -48,6 +48,8 @@ enum EntityType {
   EXTERNAL_ACTION
   INTEGRATION
   ENTITY_MATCH_CANDIDATE
+  MARKET
+  DISCOVERY_MISSION
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -98,6 +100,11 @@ model Workspace {
   integrationHealth      IntegrationCapabilityHealth[]
   matchCandidates        EntityMatchCandidate[]
   entityMerges           EntityMerge[]
+  markets                Market[]
+  discoveryMissions      DiscoveryMission[]
+  discoveryQueries       DiscoveryQuery[]
+  discoveryObservations  DiscoveryObservation[]
+  coverageAssessments    CoverageAssessment[]
 }
 
 enum UserStatus {
@@ -1124,4 +1131,276 @@ model ProviderCallRecord {
 
   @@index([workspaceId, startedAt])
   @@index([integrationId, startedAt])
+}
+
+// ───────────────────────────── 02 Market & Discovery ─────────────────────────────
+
+enum MarketStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/**
+ * A territory + industry the workspace hunts in (docs/06 §10-14). Market ≠ search: one market has many missions over
+ * time. `marketKey` (country|region|city|industry root, lower-case) keeps one market per place + industry.
+ */
+model Market {
+  id                String       @id @default(uuid()) @db.Uuid
+  workspaceId       String       @db.Uuid
+  name              String
+  marketKey         String
+  country           String       @db.Char(2)
+  region            String?
+  city              String?
+  industry          String
+  relatedCategories String[]
+  status            MarketStatus @default(ACTIVE)
+  lastDiscoveryAt   DateTime?    @db.Timestamptz(3)
+  createdAt         DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime     @updatedAt @db.Timestamptz(3)
+  createdBy         String?      @db.Uuid
+  archivedAt        DateTime?    @db.Timestamptz(3)
+  version           Int          @default(1)
+
+  workspace Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  missions  DiscoveryMission[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, marketKey])
+}
+
+enum DiscoveryMode {
+  QUICK
+  DEEP
+  MARKET_EXHAUST
+  REFRESH
+  MONITOR
+}
+
+/// docs/09 §16 mission state machine. PAUSED = intentional, WAITING = temporary dependency, BLOCKED = needs a change.
+enum DiscoveryMissionStatus {
+  DRAFT
+  READY
+  PLANNING
+  DISCOVERING
+  RESOLVING
+  ENRICHING
+  ASSESSING_COVERAGE
+  COMPLETED
+  PAUSED
+  WAITING
+  BLOCKED
+  FAILED
+  CANCELLED
+}
+
+enum DiscoveryStopReason {
+  SATURATED
+  STRATEGIES_EXHAUSTED
+  ROUND_LIMIT
+  QUERY_BUDGET
+  CALL_BUDGET
+  STOPPED_BY_USER
+}
+
+/**
+ * One run of discovery over a market (docs/06 §10-14, docs/17 §46-51). Counters are a projection refreshed by the
+ * worker; the truth is in DiscoveryQuery / DiscoveryObservation. Completion stores why it stopped and the coverage
+ * confidence — never a claim that every business was found.
+ */
+model DiscoveryMission {
+  id                    String                  @id @default(uuid()) @db.Uuid
+  workspaceId           String                  @db.Uuid
+  marketId              String                  @db.Uuid
+  mode                  DiscoveryMode
+  status                DiscoveryMissionStatus  @default(PLANNING)
+  /// The typed request, if any, and how it was understood (confirmed by the person before starting).
+  request               String?
+  interpretation        Json?
+  categories            String[]
+  maxRounds             Int
+  maxQueries            Int
+  maxProviderCalls      Int
+  currentRound          Int                     @default(0)
+  queriesExecuted       Int                     @default(0)
+  providerCalls         Int                     @default(0)
+  failedQueries         Int                     @default(0)
+  observationsCount     Int                     @default(0)
+  uniqueCompanies       Int                     @default(0)
+  newCompanies          Int                     @default(0)
+  matchedExisting       Int                     @default(0)
+  duplicateObservations Int                     @default(0)
+  reviewCandidates      Int                     @default(0)
+  rejectedObservations  Int                     @default(0)
+  withWebsite           Int                     @default(0)
+  withoutWebsite        Int                     @default(0)
+  withPhone             Int                     @default(0)
+  sourcesUsed           String[]
+  coverageConfidence    ConfidenceLevel?
+  stopReason            DiscoveryStopReason?
+  /// Why the mission is WAITING / BLOCKED / FAILED / PAUSED, in words.
+  statusReason          String?
+  /// PAUSED remembers which phase to continue; WAITING retries at retryAt.
+  resumeStatus          DiscoveryMissionStatus?
+  retryAt               DateTime?               @db.Timestamptz(3)
+  /// Lease so only one worker advances a mission at a time (docs/11 §55). Not business truth.
+  leaseOwner            String?
+  leaseUntil            DateTime?               @db.Timestamptz(3)
+  createdBy             String?                 @db.Uuid
+  startedAt             DateTime?               @db.Timestamptz(3)
+  completedAt           DateTime?               @db.Timestamptz(3)
+  createdAt             DateTime                @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                @updatedAt @db.Timestamptz(3)
+  version               Int                     @default(1)
+
+  workspace    Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  market       Market                 @relation(fields: [workspaceId, marketId], references: [workspaceId, id], onDelete: Restrict)
+  queries      DiscoveryQuery[]
+  observations DiscoveryObservation[]
+  assessments  CoverageAssessment[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, createdAt])
+  @@index([workspaceId, marketId, status])
+  @@index([status, leaseUntil])
+}
+
+enum QueryStrategyType {
+  PRIMARY_CATEGORY
+  RELATED_CATEGORY
+  KEYWORD_VARIANT
+  GEO_VARIANT
+}
+
+enum DiscoveryQueryStatus {
+  PLANNED
+  RUNNING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+/// One strategy run against one source. A strategy is never repeated on a source within a mission.
+model DiscoveryQuery {
+  id             String               @id @default(uuid()) @db.Uuid
+  workspaceId    String               @db.Uuid
+  missionId      String               @db.Uuid
+  round          Int
+  queryType      QueryStrategyType
+  strategyKey    String
+  queryText      String
+  category       String
+  keyword        String?
+  provider       String
+  integrationId  String?              @db.Uuid
+  status         DiscoveryQueryStatus @default(PLANNED)
+  cursor         String?
+  pagesFetched   Int                  @default(0)
+  pageLimit      Int
+  exhausted      Boolean              @default(false)
+  resultCount    Int                  @default(0)
+  newUniqueCount Int                  @default(0)
+  error          String?
+  errorKind      String?
+  startedAt      DateTime?            @db.Timestamptz(3)
+  completedAt    DateTime?            @db.Timestamptz(3)
+  createdAt      DateTime             @default(now()) @db.Timestamptz(3)
+
+  workspace    Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  mission      DiscoveryMission       @relation(fields: [workspaceId, missionId], references: [workspaceId, id], onDelete: Cascade)
+  observations DiscoveryObservation[]
+
+  @@unique([workspaceId, id])
+  @@unique([missionId, provider, strategyKey])
+  @@index([missionId, round, status])
+}
+
+enum ObservationStatus {
+  PENDING
+  RESOLVED
+  REJECTED
+}
+
+enum ObservationOutcome {
+  /// A new canonical company was created.
+  CREATED
+  /// Attached to a company that existed before this mission.
+  MATCHED_EXISTING
+  /// Another listing of a business this mission already found.
+  DUPLICATE_LISTING
+}
+
+/**
+ * What one source said about one business, as received (docs/06 §10-14, docs/12 §16). An observation, not a fact —
+ * entity resolution decides which company it describes; it then becomes Evidence on that company.
+ */
+model DiscoveryObservation {
+  id               String              @id @default(uuid()) @db.Uuid
+  workspaceId      String              @db.Uuid
+  missionId        String              @db.Uuid
+  queryId          String              @db.Uuid
+  round            Int
+  provider         String
+  integrationId    String?             @db.Uuid
+  sourceRecordId   String
+  name             String
+  domain           String?
+  phone            String?
+  addressLine      String?
+  city             String?
+  region           String?
+  postalCode       String?
+  country          String?             @db.Char(2)
+  category         String?
+  rawPayload       Json
+  observedAt       DateTime            @db.Timestamptz(3)
+  status           ObservationStatus   @default(PENDING)
+  outcome          ObservationOutcome?
+  companyId        String?             @db.Uuid
+  evidenceId       String?             @db.Uuid
+  matchScore       Int?
+  matchConfidence  ConfidenceLevel?
+  flaggedForReview Boolean             @default(false)
+  rejectReason     String?
+  resolvedAt       DateTime?           @db.Timestamptz(3)
+  createdAt        DateTime            @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  mission   DiscoveryMission @relation(fields: [workspaceId, missionId], references: [workspaceId, id], onDelete: Cascade)
+  query     DiscoveryQuery   @relation(fields: [workspaceId, queryId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([missionId, provider, sourceRecordId])
+  @@index([missionId, status])
+  @@index([missionId, companyId])
+  @@index([workspaceId, companyId])
+}
+
+enum CoverageDecision {
+  CONTINUE
+  COMPLETE
+}
+
+/// Coverage measured after each round (docs/04 §20): yield, duplicates, decision and its reasons.
+model CoverageAssessment {
+  id                  String               @id @default(uuid()) @db.Uuid
+  workspaceId         String               @db.Uuid
+  missionId           String               @db.Uuid
+  round               Int
+  queries             Int
+  observations        Int
+  newUnique           Int
+  cumulativeUnique    Int
+  marginalYield       Float
+  duplicateRate       Float
+  confidence          ConfidenceLevel
+  decision            CoverageDecision
+  stopReason          DiscoveryStopReason?
+  reasons             String[]
+  strategiesRemaining Int
+  assessedAt          DateTime             @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  mission   DiscoveryMission @relation(fields: [workspaceId, missionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([missionId, round])
 }
