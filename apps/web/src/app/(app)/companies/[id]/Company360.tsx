@@ -19,13 +19,15 @@ import {
 } from "lucide-react";
 import { ApiError, api, errorMessage, patch, post } from "@/lib/api";
 import { FRESHNESS, STATUS_LABEL, formatAgo, formatDate, formatPhone, location, type Overview } from "@/lib/crm";
+import { Contactability, DigitalPresenceTab, Hypotheses, ResearchControl } from "./research";
 import { ActivityTab, ContactList, EvidenceTab, IntelligenceTab, PeopleTab, Section } from "./sections";
 
-type Tab = "overview" | "people" | "intelligence" | "evidence" | "activity";
+type Tab = "overview" | "people" | "digital" | "intelligence" | "evidence" | "activity";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "people", label: "People" },
+  { key: "digital", label: "Digital presence" },
   { key: "intelligence", label: "Intelligence" },
   { key: "evidence", label: "Evidence" },
   { key: "activity", label: "Activity" },
@@ -33,7 +35,6 @@ const TABS: { key: Tab; label: string }[] = [
 
 /** Tabs from the screen spec that later phases make real — shown honestly instead of with placeholder data. */
 const LATER: { label: string; phase: number }[] = [
-  { label: "Digital presence", phase: 8 },
   { label: "Conversations", phase: 11 },
   { label: "Opportunities", phase: 12 },
   { label: "Memory", phase: 14 },
@@ -60,6 +61,14 @@ export function Company360({ id }: { id: string }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // While research runs in the worker, refresh until it settles (SSE arrives in Phase 20).
+  const researching = data?.research.active ?? false;
+  useEffect(() => {
+    if (!researching) return;
+    const timer = setInterval(() => void load(), 3000);
+    return () => clearInterval(timer);
+  }, [researching, load]);
 
   if (error && !data) {
     return (
@@ -89,6 +98,7 @@ export function Company360({ id }: { id: string }) {
 
   const counts: Partial<Record<Tab, number>> = {
     people: data.people.filter((p) => p.isCurrent).length,
+    digital: data.hypotheses.filter((h) => h.status === "ACTIVE" || h.status === "SUPPORTED").length || undefined,
     intelligence: data.facts.length,
     evidence: data.evidence.length,
   };
@@ -110,6 +120,7 @@ export function Company360({ id }: { id: string }) {
       )}
 
       <Header data={data} onChange={load} />
+      <ResearchControl data={data} onChange={load} />
 
       {data.duplicates.length > 0 && (
         <div className="card border-amber/40 px-4 py-3">
@@ -185,6 +196,7 @@ export function Company360({ id }: { id: string }) {
 
       {tab === "overview" && <OverviewTab data={data} onChange={load} />}
       {tab === "people" && <PeopleTab data={data} onChange={load} />}
+      {tab === "digital" && <DigitalPresenceTab data={data} />}
       {tab === "intelligence" && <IntelligenceTab data={data} onChange={load} />}
       {tab === "evidence" && <EvidenceTab data={data} />}
       {tab === "activity" && <ActivityTab companyId={data.company.id} />}
@@ -309,7 +321,7 @@ function Header({ data, onChange }: { data: Overview; onChange: () => Promise<vo
       {/* Score blocks: only Data quality is real in Phase 6 — the AI scores arrive with their phases, never faked. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <ScoreBlock label="ICP fit" pending="Scored in Phase 9" />
-        <ScoreBlock label="Opportunity" pending="Research in Phase 8" />
+        <OpportunityBlock data={data} />
         <ScoreBlock label="Intent" pending="Signals in Phase 15" />
         <div className="card p-4">
           <div className="text-xs text-muted">Data quality</div>
@@ -332,6 +344,27 @@ function Header({ data, onChange }: { data: Overview; onChange: () => Promise<vo
             )}
           </div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** Not a score: how many evidence-backed hypotheses there are, and how sure the strongest one is. */
+function OpportunityBlock({ data }: { data: Overview }) {
+  const active = data.hypotheses.filter((h) => h.status === "ACTIVE" || h.status === "SUPPORTED");
+  const strongest = ["HIGH", "MEDIUM", "LOW"].find((c) => active.some((h) => h.confidence === c));
+  return (
+    <div className="card p-4">
+      <div className="text-xs text-muted">Opportunity</div>
+      <div className={`mt-1 text-lg font-semibold ${active.length ? "" : "text-faint"}`}>
+        {active.length ? `${active.length} hypothes${active.length === 1 ? "is" : "es"}` : "None yet"}
+      </div>
+      <div className="mt-0.5 text-xs text-faint">
+        {active.length
+          ? `strongest: ${strongest?.toLowerCase()} confidence · not verified`
+          : data.research.latestRun
+            ? "nothing observed suggests a need"
+            : "research to find out"}
       </div>
     </div>
   );
@@ -397,6 +430,8 @@ function OverviewTab({ data, onChange }: { data: Overview; onChange: () => Promi
         </Section>
       </div>
       <div className="space-y-6">
+        <Contactability data={data} />
+        {data.hypotheses.some((h) => h.status === "ACTIVE") && <Hypotheses data={data} compact />}
         <Section title="Where the data came from">
           <dl className="space-y-3 text-sm">
             <div>

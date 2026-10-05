@@ -82,6 +82,17 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     description: 'Rule-based verifier with predictable answers (VALID, INVALID, RISKY, CATCH_ALL, UNKNOWN).',
   },
   {
+    key: 'fake_websites',
+    name: 'Test website reader',
+    category: 'WEB',
+    capabilities: ['WEBSITE_FETCH'],
+    costModel: 'FREE',
+    connection: 'NONE',
+    fake: true,
+    status: 'AVAILABLE',
+    description: 'Reads the fictional websites of the test lead sources: some lack https, booking, a contact form or a mobile layout; some name their owner. Never touches the internet.',
+  },
+  {
     key: 'fake_llm',
     name: 'Test AI model',
     category: 'AI',
@@ -114,6 +125,17 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     fake: false,
     status: 'AVAILABLE',
     description: 'Private files on the server disk (STORAGE_LOCAL_PATH). For development; production uses S3-compatible storage.',
+  },
+  {
+    key: 'web_fetcher',
+    name: 'Website reader',
+    category: 'WEB',
+    capabilities: ['WEBSITE_FETCH'],
+    costModel: 'FREE',
+    connection: 'NONE',
+    fake: false,
+    status: 'AVAILABLE',
+    description: 'Reads public business websites (home, contact and about pages) for research. Blocks private networks and unsafe redirects, reads HTML only, size- and time-limited.',
   },
   // ── real vendors, planned (docs/12 §1 recommended order) ──
   {

@@ -22,9 +22,15 @@ export type {
   Integration,
   IntegrationCapabilityHealth,
   Market,
+  OpportunityHypothesis,
   OutboxEvent,
   Person,
   ProviderCallRecord,
+  ResearchRun,
+  SocialProfile,
+  Website,
+  WebsiteAudit,
+  WebsiteSnapshot,
 } from './generated/prisma/client.js';
 export * from './generated/prisma/enums.js';
 export { provisionWorkspaceDefaults, syncPermissionCatalog } from './bootstrap.js';

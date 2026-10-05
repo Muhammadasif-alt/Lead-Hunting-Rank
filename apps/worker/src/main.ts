@@ -1,7 +1,7 @@
 import { hostname } from 'node:os';
 import { loadConfig } from '@revenue-os/config';
 import { createPrismaClient } from '@revenue-os/database';
-import { advanceMission, failMission, sweepDiscoveryMissions } from '@revenue-os/domain';
+import { advanceMission, failMission, failResearch, runResearchJob, sweepDiscoveryMissions } from '@revenue-os/domain';
 import type { ActionExecutor } from '@revenue-os/events';
 import {
   createQueueWorker,
@@ -25,6 +25,7 @@ import {
   queuePrefix,
   type DiagnosticsPingResult,
   type DiscoveryAdvanceJobData,
+  type ResearchRunJobData,
 } from '@revenue-os/shared';
 import { createLogger } from '@revenue-os/shared/server';
 import { Redis } from 'ioredis';
@@ -95,6 +96,21 @@ const discoverySweep: JobHandler = {
     }),
 };
 
+// Research (Phase 8): one company per job. The run's DB state decides whether research is due — many listings of one
+// business start one run, and a recently researched company is skipped.
+const researchRun: JobHandler = {
+  timeoutMs: 3 * 60_000,
+  handle: async (data, ctx) => {
+    const job = data as unknown as ResearchRunJobData;
+    try {
+      return await runResearchJob({ db, gateway: providers.gateway, workerId }, job);
+    } catch (err) {
+      if (ctx.finalAttempt) await failResearch(db, job, `Unexpected error: ${describeError(err)}`);
+      throw err;
+    }
+  },
+};
+
 const ping: JobHandler = {
   timeoutMs: 5_000,
   handle: async (data): Promise<DiagnosticsPingResult> => ({
@@ -129,6 +145,16 @@ const workers = [
     metrics,
     concurrency: 2,
     handlers: { [JOBS.discoveryAdvance]: discoveryAdvance },
+  }),
+  createQueueWorker({
+    queue: QUEUES.research,
+    prefix,
+    connection,
+    db,
+    logger,
+    metrics,
+    concurrency: 4,
+    handlers: { [JOBS.researchRun]: researchRun },
   }),
   createQueueWorker({
     queue: QUEUES.outbound,

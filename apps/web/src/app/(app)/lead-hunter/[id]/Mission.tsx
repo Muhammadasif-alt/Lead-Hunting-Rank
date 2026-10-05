@@ -323,6 +323,20 @@ function Counters({ data }: { data: MissionDetail }) {
         <Stat label="Without website" value={data.withoutWebsite} hint="An opportunity signal" />
         <Stat label="With phone" value={data.withPhone} />
         <Stat
+          label="Researched"
+          value={
+            <>
+              {data.research.researched}
+              <span className="text-sm font-normal text-faint"> / {data.research.companies}</span>
+            </>
+          }
+          hint={
+            data.research.active
+              ? `${data.research.active} being researched`
+              : `${data.research.hypotheses} opportunity hypotheses`
+          }
+        />
+        <Stat
           label="Round"
           value={
             <>
@@ -730,6 +744,7 @@ function ResultTable({ rows }: { rows: MissionCompany[] }) {
                   {[c.city, c.region].filter(Boolean).join(", ")}
                   <OutcomeBadge outcome={c.outcome} />
                   {c.flaggedForReview && <ReviewBadge />}
+                  <ResearchBadge research={c.research} />
                 </div>
               </td>
               <td className="px-3 py-3 text-muted">{c.websiteDomain ?? <NoWebsite />}</td>
@@ -783,6 +798,7 @@ function ResultTable({ rows }: { rows: MissionCompany[] }) {
                   {c.listings} {c.listings === 1 ? "listing" : "listings"} · round {c.firstRound}
                 </span>
                 {c.flaggedForReview && <ReviewBadge />}
+                <ResearchBadge research={c.research} />
               </div>
               {c.sources.length > 0 && (
                 <div className="mt-1.5 truncate text-xs text-faint">{c.sources.join(" · ")}</div>
@@ -792,6 +808,20 @@ function ResultTable({ rows }: { rows: MissionCompany[] }) {
         ))}
       </ul>
     </div>
+  );
+}
+
+function ResearchBadge({ research }: { research: MissionCompany["research"] }) {
+  if (!research.status) return null;
+  if (research.status === "QUEUED" || research.status === "RUNNING" || research.status === "WAITING") {
+    return <span className="badge border-accent/30 bg-accent-soft text-accent">Researching</span>;
+  }
+  if (research.status === "FAILED")
+    return <span className="badge border-danger/30 bg-danger-soft text-danger">Research failed</span>;
+  return (
+    <span className="badge" title="Opportunity hypotheses from website checks — not verified">
+      {research.hypotheses ? `${research.hypotheses} hypothes${research.hypotheses === 1 ? "is" : "es"}` : "Researched"}
+    </span>
   );
 }
 

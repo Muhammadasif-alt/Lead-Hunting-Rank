@@ -50,6 +50,9 @@ enum EntityType {
   ENTITY_MATCH_CANDIDATE
   MARKET
   DISCOVERY_MISSION
+  WEBSITE
+  RESEARCH_RUN
+  OPPORTUNITY_HYPOTHESIS
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -105,6 +108,14 @@ model Workspace {
   discoveryQueries       DiscoveryQuery[]
   discoveryObservations  DiscoveryObservation[]
   coverageAssessments    CoverageAssessment[]
+  websites               Website[]
+  websiteSnapshots       WebsiteSnapshot[]
+  websiteAudits          WebsiteAudit[]
+  companyTechnologies    CompanyTechnology[]
+  socialProfiles         SocialProfile[]
+  hypotheses             OpportunityHypothesis[]
+  hypothesisEvidence     HypothesisEvidence[]
+  researchRuns           ResearchRun[]
 }
 
 enum UserStatus {
@@ -359,11 +370,16 @@ model Company {
   mergedAt       DateTime?     @db.Timestamptz(3)
   version        Int           @default(1)
 
-  workspace   Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  mergedInto  Company?       @relation("CompanyMerge", fields: [mergedIntoId], references: [id], onDelete: Restrict)
-  mergedFrom  Company[]      @relation("CompanyMerge")
-  aliases     CompanyAlias[]
-  employments Employment[]
+  workspace    Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  mergedInto   Company?                @relation("CompanyMerge", fields: [mergedIntoId], references: [id], onDelete: Restrict)
+  mergedFrom   Company[]               @relation("CompanyMerge")
+  aliases      CompanyAlias[]
+  employments  Employment[]
+  websites     Website[]
+  technologies CompanyTechnology[]
+  social       SocialProfile[]
+  hypotheses   OpportunityHypothesis[]
+  researchRuns ResearchRun[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, normalizedName])
@@ -650,8 +666,9 @@ model Evidence {
   createdAt       DateTime        @default(now()) @db.Timestamptz(3)
   createdBy       String?         @db.Uuid
 
-  workspace Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  facts     FactEvidence[]
+  workspace  Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  facts      FactEvidence[]
+  hypotheses HypothesisEvidence[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, entityType, entityId])
@@ -1088,7 +1105,9 @@ model Integration {
   @@index([workspaceId, status])
 }
 
-/** Health per capability (docs/12 §5, §81-82): Gmail can read fine while sending is rate-limited. */
+/**
+ * Health per capability (docs/12 §5, §81-82): Gmail can read fine while sending is rate-limited.
+ */
 model IntegrationCapabilityHealth {
   workspaceId   String              @db.Uuid
   integrationId String              @db.Uuid
@@ -1407,4 +1426,271 @@ model CoverageAssessment {
   mission   DiscoveryMission @relation(fields: [workspaceId, missionId], references: [workspaceId, id], onDelete: Cascade)
 
   @@unique([missionId, round])
+}
+
+// ───────────────────────────── Research & website intelligence (Phase 8) ─────────────────────────────
+
+enum ResearchTrigger {
+  DISCOVERY
+  MANUAL
+}
+
+/// docs/09 §83-87 agent-task shape: PARTIAL keeps what was found and names the gaps; WAITING = a provider said "not now".
+enum ResearchRunStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  PARTIAL
+  WAITING
+  FAILED
+}
+
+/**
+ * One research pass over one company (docs/17 §52-57): website → snapshots → deterministic audit → technology,
+ * social, contacts → verification → opportunity hypotheses. Steps and gaps say what was done and what is missing.
+ */
+model ResearchRun {
+  id          String            @id @default(uuid()) @db.Uuid
+  workspaceId String            @db.Uuid
+  companyId   String            @db.Uuid
+  trigger     ResearchTrigger
+  missionId   String?           @db.Uuid
+  status      ResearchRunStatus @default(QUEUED)
+  /// [{ key, status: DONE|SKIPPED|FAILED, detail }] in the order they ran.
+  steps       Json              @default("[]")
+  /// What we still don't know, in words ("No email verifier connected").
+  gaps        String[]
+  summary     String?
+  error       String?
+  retryAt     DateTime?         @db.Timestamptz(3)
+  leaseOwner  String?
+  leaseUntil  DateTime?         @db.Timestamptz(3)
+  requestedBy String?           @db.Uuid
+  startedAt   DateTime?         @db.Timestamptz(3)
+  completedAt DateTime?         @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+  version     Int               @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company   @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, companyId, createdAt])
+  @@index([status, leaseUntil])
+  @@index([workspaceId, missionId])
+}
+
+enum WebsiteStatus {
+  LIVE
+  UNREACHABLE
+  UNKNOWN
+}
+
+/// A company's website (docs/06 §22-26). Only the official site is audited; the domain comes from evidence.
+model Website {
+  id              String          @id @default(uuid()) @db.Uuid
+  workspaceId     String          @db.Uuid
+  companyId       String          @db.Uuid
+  domain          String
+  url             String
+  finalUrl        String?
+  status          WebsiteStatus   @default(UNKNOWN)
+  statusReason    String?
+  isOfficial      Boolean         @default(true)
+  matchConfidence ConfidenceLevel @default(MEDIUM)
+  firstSeenAt     DateTime        @default(now()) @db.Timestamptz(3)
+  lastCheckedAt   DateTime?       @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company           @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+  snapshots WebsiteSnapshot[]
+  audits    WebsiteAudit[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, companyId, domain])
+}
+
+/// One fetched page, as evidence (docs/12 §52): URL, when, content hash and the relevant extracted text — not the whole page.
+model WebsiteSnapshot {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @db.Uuid
+  websiteId     String   @db.Uuid
+  researchRunId String?  @db.Uuid
+  evidenceId    String?  @db.Uuid
+  pageType      String
+  url           String
+  finalUrl      String
+  httpStatus    Int
+  contentType   String?
+  contentHash   String
+  byteSize      Int
+  truncated     Boolean  @default(false)
+  title         String?
+  metadata      Json
+  textExcerpt   String?
+  auditVersion  Int
+  fetchedAt     DateTime @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  website   Website   @relation(fields: [workspaceId, websiteId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([workspaceId, websiteId, fetchedAt])
+}
+
+enum WebsiteAuditStatus {
+  COMPLETE
+  PARTIAL
+  FAILED
+}
+
+/**
+ * Deterministic website checks (docs/08 §25-27): machine-readable facts first, AI interprets later. A null flag
+ * means "could not tell", never "no".
+ */
+model WebsiteAudit {
+  id                String             @id @default(uuid()) @db.Uuid
+  workspaceId       String             @db.Uuid
+  websiteId         String             @db.Uuid
+  companyId         String             @db.Uuid
+  researchRunId     String?            @db.Uuid
+  auditVersion      Int
+  status            WebsiteAuditStatus
+  performedAt       DateTime           @db.Timestamptz(3)
+  hasSsl            Boolean?
+  mobileReady       Boolean?
+  hasContactForm    Boolean?
+  hasBooking        Boolean?
+  hasChat           Boolean?
+  hasClearCta       Boolean?
+  copyrightYear     Int?
+  technologySummary String[]
+  /// [{ key, label, observed, detail, url }]
+  findings          Json
+  overallConfidence ConfidenceLevel
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  website   Website   @relation(fields: [workspaceId, websiteId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([workspaceId, companyId, performedAt])
+}
+
+/// Global catalog of detectable technologies (WordPress, Calendly, Google Analytics…).
+model Technology {
+  id        String   @id @default(uuid()) @db.Uuid
+  key       String   @unique
+  name      String
+  category  String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  companies CompanyTechnology[]
+}
+
+model CompanyTechnology {
+  id              String          @id @default(uuid()) @db.Uuid
+  workspaceId     String          @db.Uuid
+  companyId       String          @db.Uuid
+  technologyId    String          @db.Uuid
+  evidenceId      String?         @db.Uuid
+  confidence      ConfidenceLevel @default(MEDIUM)
+  firstDetectedAt DateTime        @db.Timestamptz(3)
+  lastDetectedAt  DateTime        @db.Timestamptz(3)
+  /// Set when a later scan no longer saw it (kept for history, e.g. a migration away from a platform).
+  goneAt          DateTime?       @db.Timestamptz(3)
+
+  workspace  Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company    Company    @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+  technology Technology @relation(fields: [technologyId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, companyId, technologyId])
+}
+
+enum SocialProfileStatus {
+  ACTIVE
+  GONE
+}
+
+/// A public profile linked from the official website. A profile does not identify the owner (docs/12 §53).
+model SocialProfile {
+  id              String              @id @default(uuid()) @db.Uuid
+  workspaceId     String              @db.Uuid
+  companyId       String              @db.Uuid
+  platform        String
+  profileUrl      String
+  handle          String?
+  status          SocialProfileStatus @default(ACTIVE)
+  matchConfidence ConfidenceLevel     @default(MEDIUM)
+  evidenceId      String?             @db.Uuid
+  firstSeenAt     DateTime            @db.Timestamptz(3)
+  lastCheckedAt   DateTime            @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company   @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@unique([workspaceId, companyId, platform, profileUrl])
+}
+
+/// docs/09 §67-76. A hypothesis is never a verified pain — it says "may", cites evidence and can be invalidated.
+enum HypothesisStatus {
+  CANDIDATE
+  ACTIVE
+  SUPPORTED
+  WEAKENED
+  INVALIDATED
+  EXPIRED
+  CONVERTED
+}
+
+enum HypothesisSource {
+  RULE
+  AI
+}
+
+/**
+ * "Why this company might need us" (docs/06 §31-40, docs/17 §52-57). One row per company + kind; a later scan that
+ * no longer sees the reason invalidates it instead of deleting it.
+ */
+model OpportunityHypothesis {
+  id              String           @id @default(uuid()) @db.Uuid
+  workspaceId     String           @db.Uuid
+  companyId       String           @db.Uuid
+  key             String
+  hypothesis      String
+  reasonSummary   String
+  status          HypothesisStatus @default(ACTIVE)
+  confidence      ConfidenceLevel
+  source          HypothesisSource @default(RULE)
+  researchRunId   String?          @db.Uuid
+  generatedAt     DateTime         @db.Timestamptz(3)
+  lastSupportedAt DateTime         @db.Timestamptz(3)
+  expiresAt       DateTime?        @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+  version         Int              @default(1)
+
+  workspace Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company              @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+  evidence  HypothesisEvidence[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, companyId, key])
+  @@index([workspaceId, status])
+}
+
+model HypothesisEvidence {
+  workspaceId  String   @db.Uuid
+  hypothesisId String   @db.Uuid
+  evidenceId   String   @db.Uuid
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace  Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  hypothesis OpportunityHypothesis @relation(fields: [workspaceId, hypothesisId], references: [workspaceId, id], onDelete: Cascade)
+  evidence   Evidence              @relation(fields: [workspaceId, evidenceId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@id([hypothesisId, evidenceId])
+  @@index([workspaceId, evidenceId])
 }

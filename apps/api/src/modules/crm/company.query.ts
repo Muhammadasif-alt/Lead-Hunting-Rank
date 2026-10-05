@@ -1,8 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type { Company, CompanyStatus, ContactPoint, Evidence, Prisma } from '@revenue-os/database';
-import { freshnessOf, normalizeCompanyName, NotFoundError, type PermissionKey } from '@revenue-os/shared';
+import { assessContactability, freshnessOf, normalizeCompanyName, NotFoundError, roleRelevance, type PermissionKey } from '@revenue-os/shared';
 import { PrismaService } from '../../infra/prisma.service.js';
 import { OPEN_CANDIDATE } from './entity-resolution.service.js';
+import { presentRun } from './research.service.js';
 
 export interface CompanyListQuery {
   search?: string;
@@ -152,7 +153,7 @@ export class CompanyQueryService {
     const company = await db.company.findFirst({ where: { id, workspaceId }, include: { aliases: { orderBy: { createdAt: 'asc' } } } });
     if (!company) throw new NotFoundError(`company ${id} not found`);
 
-    const [mergedInto, mergedFrom, employments, companyPoints, facts, evidence, mappings, candidates, creator] = await Promise.all([
+    const [mergedInto, mergedFrom, employments, companyPoints, facts, evidence, mappings, candidates, creator, runs, website, technologies, social, hypotheses] = await Promise.all([
       company.mergedIntoId ? db.company.findUnique({ where: { id: company.mergedIntoId }, select: { id: true, displayName: true } }) : null,
       db.company.findMany({ where: { workspaceId, mergedIntoId: id }, select: { id: true, displayName: true, mergedAt: true }, orderBy: { mergedAt: 'desc' } }),
       db.employment.findMany({ where: { workspaceId, companyId: id }, include: { person: true }, orderBy: [{ isCurrent: 'desc' }, { createdAt: 'asc' }] }),
@@ -169,6 +170,19 @@ export class CompanyQueryService {
         orderBy: { score: 'desc' },
       }),
       company.createdBy ? db.user.findUnique({ where: { id: company.createdBy }, select: { id: true, name: true } }) : null,
+      db.researchRun.findMany({ where: { workspaceId, companyId: id }, orderBy: { createdAt: 'desc' }, take: 5 }),
+      db.website.findFirst({
+        where: { workspaceId, companyId: id, isOfficial: true },
+        orderBy: [{ lastCheckedAt: { sort: 'desc', nulls: 'last' } }],
+        include: { audits: { orderBy: { performedAt: 'desc' }, take: 1 }, snapshots: { orderBy: { fetchedAt: 'desc' }, take: 12 } },
+      }),
+      db.companyTechnology.findMany({ where: { workspaceId, companyId: id }, include: { technology: true }, orderBy: [{ goneAt: { sort: 'desc', nulls: 'first' } }, { firstDetectedAt: 'asc' }] }),
+      db.socialProfile.findMany({ where: { workspaceId, companyId: id }, orderBy: [{ status: 'asc' }, { platform: 'asc' }] }),
+      db.opportunityHypothesis.findMany({
+        where: { workspaceId, companyId: id },
+        include: { evidence: { include: { evidence: true } } },
+        orderBy: [{ status: 'asc' }, { confidence: 'desc' }, { generatedAt: 'desc' }],
+      }),
     ]);
 
     const personIds = employments.map((e) => e.personId);
@@ -211,6 +225,39 @@ export class CompanyQueryService {
     }
     const lastObservedAt = evidence[0]?.observedAt ?? null;
     const allPoints = [...companyPoints, ...personPoints];
+    const audit = website?.audits[0] ?? null;
+    const latestRun = runs[0] ?? null;
+
+    // Decision makers: people the sources name with a role, ranked by role fit (not verified authority).
+    const rank = ['HIGH', 'MEDIUM', 'LOW'];
+    const decisionMakers = employments
+      .filter((e) => e.isCurrent)
+      .map((e) => {
+        const email = personPoints.find((cp) => cp.entityId === e.personId && cp.type === 'EMAIL' && cp.status !== 'INVALID') ?? null;
+        return {
+          personId: e.personId,
+          name: e.person.fullName,
+          title: e.title,
+          relevance: roleRelevance(e.title),
+          confidence: e.confidence,
+          email: email ? { value: email.value, status: email.status, verification: email.verifications[0]?.status ?? null } : null,
+        };
+      })
+      .sort((a, b) => rank.indexOf(a.relevance) - rank.indexOf(b.relevance));
+    const phonePoints = allPoints.filter((p) => p.type !== 'EMAIL' && p.type !== 'OTHER').length;
+    const contactability = assessContactability({
+      emails: allPoints
+        .filter((p) => p.type === 'EMAIL')
+        .map((p) => {
+          const dm = p.entityType === 'PERSON' ? decisionMakers.find((d) => d.personId === p.entityId) : undefined;
+          return { status: p.status, verification: p.verifications[0]?.status ?? null, person: dm ? { name: dm.name, relevance: dm.relevance } : null };
+        }),
+      // The main phone on the record counts when no phone contact point repeats it.
+      phones: phonePoints || (company.phone ? 1 : 0),
+      contactForm: audit?.hasContactForm ?? null,
+    });
+    const latestPerPage = new Map<string, NonNullable<typeof website>['snapshots'][number]>();
+    for (const sn of website?.snapshots ?? []) if (!latestPerPage.has(sn.pageType)) latestPerPage.set(sn.pageType, sn);
     const active = !company.mergedIntoId && company.status !== 'ARCHIVED';
     const can = (p: PermissionKey) => permissions.has(p);
 
@@ -246,6 +293,78 @@ export class CompanyQueryService {
       facts: factRows,
       evidence: evidence.map((e) => ({ ...presentEvidence(e, now), factCount: e._count.facts })),
       sources: [...sources.values()].sort((a, b) => b.count - a.count),
+      research: {
+        latestRun: latestRun ? presentRun(latestRun) : null,
+        active: !!latestRun && ['QUEUED', 'RUNNING', 'WAITING'].includes(latestRun.status),
+        history: runs.map((r) => ({ id: r.id, status: r.status, trigger: r.trigger, summary: r.summary, createdAt: r.createdAt, completedAt: r.completedAt })),
+      },
+      website: website
+        ? {
+            id: website.id,
+            domain: website.domain,
+            url: website.url,
+            finalUrl: website.finalUrl,
+            status: website.status,
+            statusReason: website.statusReason,
+            lastCheckedAt: website.lastCheckedAt,
+            audit: audit
+              ? {
+                  id: audit.id,
+                  status: audit.status,
+                  auditVersion: audit.auditVersion,
+                  performedAt: audit.performedAt,
+                  hasSsl: audit.hasSsl,
+                  mobileReady: audit.mobileReady,
+                  hasContactForm: audit.hasContactForm,
+                  hasBooking: audit.hasBooking,
+                  hasChat: audit.hasChat,
+                  hasClearCta: audit.hasClearCta,
+                  copyrightYear: audit.copyrightYear,
+                  technologySummary: audit.technologySummary,
+                  findings: audit.findings,
+                  confidence: audit.overallConfidence,
+                }
+              : null,
+            snapshots: [...latestPerPage.values()].map((sn) => ({
+              id: sn.id,
+              pageType: sn.pageType,
+              url: sn.finalUrl,
+              title: sn.title,
+              httpStatus: sn.httpStatus,
+              fetchedAt: sn.fetchedAt,
+              contentHash: sn.contentHash,
+              byteSize: sn.byteSize,
+              truncated: sn.truncated,
+              evidenceId: sn.evidenceId,
+              untrustedInstructions: (sn.metadata as { untrustedInstructions?: boolean } | null)?.untrustedInstructions === true,
+            })),
+          }
+        : null,
+      technologies: technologies.map((t) => ({
+        key: t.technology.key,
+        name: t.technology.name,
+        category: t.technology.category,
+        firstDetectedAt: t.firstDetectedAt,
+        lastDetectedAt: t.lastDetectedAt,
+        goneAt: t.goneAt,
+        evidenceId: t.evidenceId,
+      })),
+      socialProfiles: social.map((sp) => ({ id: sp.id, platform: sp.platform, url: sp.profileUrl, handle: sp.handle, status: sp.status, matchConfidence: sp.matchConfidence, lastCheckedAt: sp.lastCheckedAt })),
+      // Kept apart from facts: a hypothesis says "may", cites its evidence and can be invalidated (docs/17 §52-57).
+      hypotheses: hypotheses.map((h) => ({
+        id: h.id,
+        key: h.key,
+        hypothesis: h.hypothesis,
+        reasonSummary: h.reasonSummary,
+        status: h.status,
+        confidence: h.confidence,
+        source: h.source,
+        generatedAt: h.generatedAt,
+        lastSupportedAt: h.lastSupportedAt,
+        expiresAt: h.expiresAt,
+        evidence: h.evidence.map((he) => presentEvidence(he.evidence, now)).sort((a, b) => +b.observedAt - +a.observedAt),
+      })),
+      contactability: { ...contactability, decisionMakers },
       duplicates: candidates.map((c) => {
         const other = others.find((o) => o.id === (c.leftId === id ? c.rightId : c.leftId));
         return {
@@ -281,6 +400,7 @@ export class CompanyQueryService {
         recordEvidence: active && can('evidence.manage'),
         resolveDuplicates: active && can('company.merge'),
         findDuplicates: active && can('company.update'),
+        research: active && can('company.research'),
       },
     };
   }

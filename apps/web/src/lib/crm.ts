@@ -141,7 +141,107 @@ export interface Overview {
     recordEvidence: boolean;
     resolveDuplicates: boolean;
     findDuplicates: boolean;
+    research: boolean;
   };
+  research: {
+    latestRun: ResearchRun | null;
+    active: boolean;
+    history: {
+      id: string;
+      status: ResearchRunStatus;
+      trigger: string;
+      summary: string | null;
+      createdAt: string;
+      completedAt: string | null;
+    }[];
+  };
+  website: {
+    id: string;
+    domain: string;
+    url: string;
+    finalUrl: string | null;
+    status: "LIVE" | "UNREACHABLE" | "UNKNOWN";
+    statusReason: string | null;
+    lastCheckedAt: string | null;
+    audit: {
+      id: string;
+      status: string;
+      performedAt: string;
+      copyrightYear: number | null;
+      technologySummary: string[];
+      findings: { key: string; label: string; observed: boolean | null; detail: string; url: string | null }[];
+      confidence: Confidence;
+    } | null;
+    snapshots: {
+      id: string;
+      pageType: string;
+      url: string;
+      title: string | null;
+      httpStatus: number;
+      fetchedAt: string;
+      contentHash: string;
+      byteSize: number;
+      truncated: boolean;
+      untrustedInstructions: boolean;
+    }[];
+  } | null;
+  technologies: {
+    key: string;
+    name: string;
+    category: string;
+    firstDetectedAt: string;
+    lastDetectedAt: string;
+    goneAt: string | null;
+  }[];
+  socialProfiles: {
+    id: string;
+    platform: string;
+    url: string;
+    handle: string | null;
+    status: "ACTIVE" | "GONE";
+    matchConfidence: Confidence;
+    lastCheckedAt: string;
+  }[];
+  hypotheses: {
+    id: string;
+    key: string;
+    hypothesis: string;
+    reasonSummary: string;
+    status: "CANDIDATE" | "ACTIVE" | "SUPPORTED" | "WEAKENED" | "INVALIDATED" | "EXPIRED" | "CONVERTED";
+    confidence: Confidence;
+    source: "RULE" | "AI";
+    generatedAt: string;
+    lastSupportedAt: string;
+    expiresAt: string | null;
+    evidence: EvidenceItem[];
+  }[];
+  contactability: {
+    level: "HIGH" | "MEDIUM" | "LOW" | "NONE";
+    reasons: string[];
+    decisionMakers: {
+      personId: string;
+      name: string;
+      title: string | null;
+      relevance: "HIGH" | "MEDIUM" | "LOW";
+      confidence: Confidence;
+      email: { value: string; status: ContactPoint["status"]; verification: string | null } | null;
+    }[];
+  };
+}
+
+export type ResearchRunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "WAITING" | "FAILED";
+
+export interface ResearchRun {
+  id: string;
+  trigger: "DISCOVERY" | "MANUAL";
+  status: ResearchRunStatus;
+  steps: { key: string; status: "DONE" | "SKIPPED" | "FAILED"; detail: string }[];
+  gaps: string[];
+  summary: string | null;
+  error: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
 }
 
 export const STATUS_LABEL: Record<CompanyStatus, string> = {

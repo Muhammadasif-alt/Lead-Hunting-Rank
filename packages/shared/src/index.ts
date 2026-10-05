@@ -7,3 +7,4 @@ export * from './rbac.js';
 export * from './normalize.js';
 export * from './entity-resolution.js';
 export * from './discovery.js';
+export * from './research.js';

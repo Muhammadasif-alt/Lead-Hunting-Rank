@@ -179,7 +179,7 @@ export class DiscoveryQueryService {
     const m = await db.discoveryMission.findFirst({ where: { id, workspaceId }, include: { market: marketSelect } });
     if (!m) throw new NotFoundError(`discovery mission ${id} not found`);
 
-    const [users, rounds, queries, queryCounts, observationCounts, uniqueByProvider] = await Promise.all([
+    const [users, rounds, queries, queryCounts, observationCounts, uniqueByProvider, [research]] = await Promise.all([
       this.creators([m.createdBy]),
       db.coverageAssessment.findMany({ where: { workspaceId, missionId: id }, orderBy: { round: 'asc' } }),
       db.discoveryQuery.findMany({ where: { workspaceId, missionId: id }, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 100 }),
@@ -191,6 +191,26 @@ export class DiscoveryQueryService {
         JOIN "Company" c ON c.id = o."companyId" AND c."workspaceId" = o."workspaceId"
         WHERE o."workspaceId" = ${workspaceId}::uuid AND o."missionId" = ${id}::uuid AND o.status = 'RESOLVED'
         GROUP BY o.provider`,
+      // Research of the businesses this mission found (Phase 8): latest run per company, active hypotheses.
+      db.$queryRaw<{ companies: number; researched: number; active: number; failed: number; hypotheses: number }[]>`
+        WITH comp AS (
+          SELECT DISTINCT COALESCE(c."mergedIntoId", c.id) AS cid
+          FROM "DiscoveryObservation" o
+          JOIN "Company" c ON c.id = o."companyId" AND c."workspaceId" = o."workspaceId"
+          WHERE o."workspaceId" = ${workspaceId}::uuid AND o."missionId" = ${id}::uuid AND o.status = 'RESOLVED'
+        ), latest AS (
+          SELECT DISTINCT ON (r."companyId") r."companyId", r.status
+          FROM "ResearchRun" r JOIN comp ON comp.cid = r."companyId"
+          WHERE r."workspaceId" = ${workspaceId}::uuid
+          ORDER BY r."companyId", r."createdAt" DESC
+        )
+        SELECT (SELECT count(*) FROM comp)::int AS companies,
+               count(*) FILTER (WHERE status IN ('COMPLETED', 'PARTIAL'))::int AS researched,
+               count(*) FILTER (WHERE status IN ('QUEUED', 'RUNNING', 'WAITING'))::int AS active,
+               count(*) FILTER (WHERE status = 'FAILED')::int AS failed,
+               (SELECT count(*) FROM "OpportunityHypothesis" h JOIN comp ON comp.cid = h."companyId"
+                 WHERE h."workspaceId" = ${workspaceId}::uuid AND h.status = 'ACTIVE')::int AS hypotheses
+        FROM latest`,
     ]);
 
     const providers = [...new Set([...queryCounts.map((q) => q.provider), ...observationCounts.map((o) => o.provider)])].sort();
@@ -205,6 +225,7 @@ export class DiscoveryQueryService {
         observations: observationCounts.find((o) => o.provider === provider)?._count ?? 0,
         uniqueCompanies: uniqueByProvider.find((u) => u.provider === provider)?.unique ?? 0,
       })),
+      research: research ?? { companies: 0, researched: 0, active: 0, failed: 0, hypotheses: 0 },
       // The UI shows only what the server says is allowed now (docs/09 §67); the API still enforces every command.
       allowedActions: allowedMissionActions(m.status, permissions),
     };
@@ -268,8 +289,19 @@ export class DiscoveryQueryService {
       total = after ? (await this.companies(workspaceId, missionId, { ...q, cursor: undefined, limit: 1 })).total : 0;
     }
     const last = page[page.length - 1];
+    const ids = page.map((r) => r.companyId);
+    const [runs, hyps] = ids.length
+      ? await Promise.all([
+          db.researchRun.findMany({ where: { workspaceId, companyId: { in: ids } }, orderBy: { createdAt: 'desc' }, distinct: ['companyId'], select: { companyId: true, status: true } }),
+          db.opportunityHypothesis.groupBy({ by: ['companyId'], where: { workspaceId, companyId: { in: ids }, status: 'ACTIVE' }, _count: true }),
+        ])
+      : [[], []];
     return {
-      items: page.map(({ providers, total: _t, ...r }) => ({ ...r, sources: providers.map(providerName) })),
+      items: page.map(({ providers, total: _t, ...r }) => ({
+        ...r,
+        sources: providers.map(providerName),
+        research: { status: runs.find((x) => x.companyId === r.companyId)?.status ?? null, hypotheses: hyps.find((h) => h.companyId === r.companyId)?._count ?? 0 },
+      })),
       nextCursor: rows.length > q.limit && last ? encodeCursor(last.displayName, last.companyId) : null,
       total,
     };

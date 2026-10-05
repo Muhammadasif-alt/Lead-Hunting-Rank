@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import type { z } from 'zod';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AccessService, type Access } from '../auth/access.service.js';
@@ -20,6 +20,7 @@ import {
 } from './crm.schemas.js';
 import { EntityResolutionService } from './entity-resolution.service.js';
 import { PersonService } from './person.service.js';
+import { ResearchService } from './research.service.js';
 
 const Id = new ParseUUIDPipe();
 
@@ -36,6 +37,7 @@ export class CompaniesController {
     private readonly people: PersonService,
     private readonly contacts: ContactPointService,
     private readonly evidence: EvidenceService,
+    private readonly research: ResearchService,
     private readonly access: AccessService,
   ) {}
 
@@ -95,6 +97,14 @@ export class CompaniesController {
   @RequirePermission('company.update')
   async detectDuplicates(@Param('id', Id) id: string, @CurrentAccess() access: Access) {
     return { openDuplicates: await this.companies.detectDuplicates(this.access.serviceContext(access), id) };
+  }
+
+  /** Research now (website, checks, contacts, verification, hypotheses). 202: the worker does it; poll the overview. */
+  @Post(':id/research')
+  @HttpCode(202)
+  @RequirePermission('company.research')
+  requestResearch(@Param('id', Id) id: string, @CurrentAccess() access: Access) {
+    return this.research.request(this.access.serviceContext(access), id);
   }
 
   @Post(':id/people')

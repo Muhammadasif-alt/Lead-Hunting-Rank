@@ -121,6 +121,8 @@ export interface MissionDetail extends MissionSummary {
   rounds: CoverageRound[];
   queries: QueryRow[];
   sources: MissionSource[];
+  /** Phase 8: research of the businesses this hunt found. */
+  research: { companies: number; researched: number; active: number; failed: number; hypotheses: number };
   allowedActions: MissionAction[];
 }
 
@@ -137,6 +139,10 @@ export interface MissionCompany {
   listings: number;
   firstRound: number;
   flaggedForReview: boolean;
+  research: {
+    status: "QUEUED" | "RUNNING" | "WAITING" | "COMPLETED" | "PARTIAL" | "FAILED" | null;
+    hypotheses: number;
+  };
 }
 
 export interface MissionCompaniesResponse {

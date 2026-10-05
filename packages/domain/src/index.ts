@@ -6,3 +6,4 @@ export * from './crm/company-records.js';
 export * from './crm/entity-resolution.js';
 export * from './discovery/index.js';
 export * from './evidence/evidence.js';
+export * from './research/index.js';

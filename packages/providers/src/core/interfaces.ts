@@ -181,6 +181,36 @@ export interface VerificationProvider extends ProviderAdapter {
   verifyEmail(email: string, options: CallOptions): Promise<VerificationResult>;
 }
 
+// ───────────────────────────── website ─────────────────────────────
+
+/**
+ * Why a page could not be read. A dead or slow website is a fact about that website, not a provider failure: it is
+ * returned as data so it never opens the fetcher's circuit breaker or retries the job.
+ */
+export type PageFetchFailure = 'UNREACHABLE' | 'TIMEOUT' | 'BLOCKED' | 'TOO_LARGE' | 'NOT_HTML' | 'HTTP_ERROR' | 'TOO_MANY_REDIRECTS';
+
+export interface FetchedPage extends Usage {
+  requestedUrl: string;
+  /** Where the redirects ended. */
+  finalUrl: string;
+  /** HTTP status of the last response; 0 when none arrived. */
+  status: number;
+  contentType: string | null;
+  /** Decoded HTML (possibly cut at the size limit). Empty when the page could not be read. */
+  body: string;
+  bytes: number;
+  truncated: boolean;
+  fetchedAt: string;
+  redirects: string[];
+  failure: PageFetchFailure | null;
+  failureDetail: string | null;
+}
+
+/** Controlled website reader (docs/12 §48-52). The only component allowed to fetch arbitrary URLs. */
+export interface WebsiteProvider extends ProviderAdapter {
+  fetchPage(url: string, options: CallOptions): Promise<FetchedPage>;
+}
+
 // ───────────────────────────── LLM ─────────────────────────────
 
 /** Model classes (docs/12 §59) map to a concrete provider model in config. */
@@ -255,6 +285,7 @@ export interface CapabilityAdapters {
   COMPANY_ENRICH: EnrichmentProvider;
   PERSON_ENRICH: EnrichmentProvider;
   EMAIL_VERIFY: VerificationProvider;
+  WEBSITE_FETCH: WebsiteProvider;
   LLM_REASONING: LLMProvider;
   LLM_EXTRACTION: LLMProvider;
   EMBEDDINGS: LLMProvider;

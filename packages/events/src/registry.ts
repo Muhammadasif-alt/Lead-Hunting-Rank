@@ -45,6 +45,18 @@ export interface EventPayloads {
   DiscoveryMissionFailed: { missionId: string; reason: string };
   /** A mission found a business (new or already known) — research/enrichment eligibility hooks here (Phase 8). */
   CompanyDiscovered: { companyId: string; missionId: string; observationId: string; provider: string; outcome: 'CREATED' | 'MATCHED_EXISTING' };
+  // research (docs/17 §52-57)
+  /** A person asked for research; the run waits in QUEUED for a worker. */
+  ResearchRequested: { runId: string; companyId: string };
+  ResearchRunStarted: { runId: string; companyId: string; trigger: string };
+  /** PARTIAL = useful results with named gaps (e.g. no verifier connected). */
+  ResearchRunCompleted: { runId: string; companyId: string; status: 'COMPLETED' | 'PARTIAL'; hypotheses: number; gaps: number };
+  ResearchRunFailed: { runId: string; companyId: string; reason: string };
+  WebsiteAudited: { websiteId: string; companyId: string; auditId: string; auditVersion: number; status: string };
+  /** A rule (Phase 9: AI) proposed why the company may need us — a hypothesis, not a verified pain. */
+  OpportunityHypothesisProposed: { hypothesisId: string; companyId: string; key: string; confidence: string };
+  OpportunityHypothesisInvalidated: { hypothesisId: string; companyId: string; key: string; reason: string };
+  ContactPointVerified: { contactPointId: string; entityType: string; entityId: string; status: string; provider: string };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -98,7 +110,10 @@ export type AggregateType =
   | 'INTEGRATION'
   | 'ENTITY_MATCH_CANDIDATE'
   | 'MARKET'
-  | 'DISCOVERY_MISSION';
+  | 'DISCOVERY_MISSION'
+  | 'WEBSITE'
+  | 'RESEARCH_RUN'
+  | 'OPPORTUNITY_HYPOTHESIS';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -125,7 +140,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -148,6 +163,15 @@ const advanceMission: EventRoute = {
   job: JOBS.discoveryAdvance,
   priority: PRIORITY.BACKGROUND,
   toJobData: (e) => ({ missionId: e.aggregateId, schemaVersion: 1 }),
+};
+
+/** Research of one company; the job reloads the company and decides whether a run is due (docs/11 §76 research dedupe). */
+const researchCompany: EventRoute = {
+  consumer: 'research.discovered-company',
+  queue: QUEUES.research,
+  job: JOBS.researchRun,
+  priority: PRIORITY.BACKGROUND,
+  toJobData: (e) => ({ companyId: e.payload.companyId, missionId: e.payload.missionId, trigger: 'DISCOVERY', schemaVersion: 1 }),
 };
 
 const entity = (owner: EventDefinition['owner'], aggregateType: AggregateType, description: string, pii: 'none' | 'low' = 'none'): EventDefinition => ({
@@ -189,7 +213,19 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   DiscoveryMissionBlocked: entity('discovery', 'DISCOVERY_MISSION', 'A mission cannot continue until something changes (e.g. no lead source)'),
   DiscoveryMissionCompleted: entity('discovery', 'DISCOVERY_MISSION', 'A mission finished by its stopping criteria (not a claim of 100% coverage)'),
   DiscoveryMissionFailed: entity('discovery', 'DISCOVERY_MISSION', 'A mission failed unrecoverably'),
-  CompanyDiscovered: entity('discovery', 'COMPANY', 'A discovery mission found a business (new or already known)'),
+  CompanyDiscovered: { ...entity('discovery', 'COMPANY', 'A discovery mission found a business (new or already known)'), routes: [researchCompany] },
+  ResearchRequested: {
+    ...entity('research', 'RESEARCH_RUN', 'A person asked for a company to be researched'),
+    // A person is waiting for it: ahead of background research from discovery.
+    routes: [{ ...researchCompany, consumer: 'research.run-requested', priority: PRIORITY.NORMAL, toJobData: (e) => ({ runId: e.aggregateId, companyId: e.payload.companyId, trigger: 'MANUAL', schemaVersion: 1 }) }],
+  },
+  ResearchRunStarted: entity('research', 'RESEARCH_RUN', 'Research of a company started'),
+  ResearchRunCompleted: entity('research', 'RESEARCH_RUN', 'Research finished (COMPLETED, or PARTIAL with named gaps)'),
+  ResearchRunFailed: entity('research', 'RESEARCH_RUN', 'Research of a company failed unrecoverably'),
+  WebsiteAudited: entity('research', 'WEBSITE', 'Deterministic website checks were recorded'),
+  OpportunityHypothesisProposed: entity('research', 'OPPORTUNITY_HYPOTHESIS', 'A possible need was proposed from observed facts (not verified)'),
+  OpportunityHypothesisInvalidated: entity('research', 'OPPORTUNITY_HYPOTHESIS', 'A later observation no longer supports a hypothesis'),
+  ContactPointVerified: entity('research', 'CONTACT_POINT', 'A verification provider checked an email (VALID/INVALID/RISKY/CATCH_ALL/UNKNOWN)', 'low'),
   EvidenceRecorded: entity('evidence', 'EVIDENCE', 'Evidence from a source was stored'),
   FactRecorded: entity('evidence', 'FACT', 'A fact was created or confirmed by new evidence'),
   FactConflicted: entity('evidence', 'FACT', 'New evidence disagrees with an existing fact — needs resolution'),

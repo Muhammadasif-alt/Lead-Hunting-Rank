@@ -10,9 +10,11 @@ import { FakeDirectoryProvider, FakeLeadProvider } from '../fakes/leads.js';
 import { FakeLLMProvider } from '../fakes/llm.js';
 import { FakeNotificationProvider } from '../fakes/notification.js';
 import { FakeVerificationProvider } from '../fakes/verification.js';
+import { FakeWebsiteProvider } from '../fakes/websites.js';
 import { ProviderGateway, type BindingResolver, type ProviderBinding } from '../gateway/gateway.js';
 import { MemoryProviderStateStore, RedisProviderStateStore } from '../gateway/state-store.js';
 import { LocalStorageProvider } from '../storage/local.js';
+import { HttpWebsiteFetcher } from '../web/fetcher.js';
 import { PrismaHealthSink, PrismaUsageSink } from './sinks.js';
 
 type IntegrationRef = Pick<Integration, 'id' | 'workspaceId' | 'provider'>;
@@ -42,6 +44,7 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
     fake_leads: new FakeLeadProvider(),
     fake_directory: new FakeDirectoryProvider(),
     fake_verification: new FakeVerificationProvider(),
+    fake_websites: new FakeWebsiteProvider(),
     fake_llm: new FakeLLMProvider(),
     fake_notifications: new FakeNotificationProvider(),
   };
@@ -57,6 +60,8 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
       case 'local_storage':
         // One directory per workspace — a key can never reach another workspace's files.
         return new LocalStorageProvider(join(options.storagePath, integration.workspaceId));
+      case 'web_fetcher':
+        return new HttpWebsiteFetcher();
       default:
         return shared[integration.provider as keyof typeof shared] ?? null;
     }
@@ -80,7 +85,12 @@ const DEFAULT_RATE_LIMITS: Record<string, ProviderBinding['rateLimit']> = {
   fake_email: { limit: 60, windowMs: 60_000 },
   fake_leads: { limit: 120, windowMs: 60_000 },
   fake_directory: { limit: 120, windowMs: 60_000 },
+  // Polite to the sites we read and to our own bandwidth: three pages per company.
+  web_fetcher: { limit: 60, windowMs: 60_000 },
 };
+
+/** The fetcher keeps its own per-page deadline (a slow site is a website fact); the gateway's must outlast it. */
+const DEFAULT_TIMEOUTS: Record<string, number> = { web_fetcher: 20_000 };
 
 export function toBinding(integration: Pick<Integration, 'id' | 'workspaceId' | 'provider' | 'capabilities'>, factory: AdapterFactory): ProviderBinding | null {
   const adapter = factory.forIntegration(integration);
@@ -91,6 +101,7 @@ export function toBinding(integration: Pick<Integration, 'id' | 'workspaceId' | 
     capabilities: integration.capabilities as Capability[],
     adapter,
     rateLimit: DEFAULT_RATE_LIMITS[integration.provider],
+    timeoutMs: DEFAULT_TIMEOUTS[integration.provider],
   };
 }
 

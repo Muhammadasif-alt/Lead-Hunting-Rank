@@ -15,7 +15,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 5 | Provider Gateway (fake providers first) | ✅ done 2026-10-04 |
 | 6 | CRM Core — Company 360 | ✅ done 2026-10-04 |
 | 7 | Lead Hunter — Market Exhaust | ✅ done 2026-10-05 |
-| 8 … 24 | Research → AI → Policy → Campaigns → Inbox → … → Autonomy rollout | ⬜ |
+| 8 | Research + Intelligence | ✅ done 2026-10-05 |
+| 9 … 24 | AI → Policy → Campaigns → Inbox → … → Autonomy rollout | ⬜ |
 
 ## Phase 0 — Definition of Done
 - [x] Monorepo: `apps/web`, `apps/api`, `apps/worker`, `packages/*`, one pnpm workspace + lockfile
@@ -115,6 +116,19 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] Screens: Lead Hunter (describe → understood as → editable market, categories, depth, sources with health, recent hunts, saved markets) and live hunt view (counters, per-round saturation bars, coverage card, activity feed, results table with website/phone/outcome filters → Company 360); no fake enrichment options
 - [x] Tests: discovery unit tests (interpretation, planning, coverage), fake source tests, engine integration (Market Exhaust Austin landscaping on 2 sources → 72 → 11 → 5 → 0 new, SATURATED, HIGH; existing company matched not duplicated; BLOCKED; WAITING → resume; pause wins; QUICK; re-run creates no new companies), API integration + HTTP role checks
 - Deferred by plan: enrichment (website/social/owners/verification, Phase 8) — state ENRICHING is skipped; SSE live updates (Phase 20, the hunt page polls); radius/ZIP/multi-city territories and map drawing; saved-market monitoring and change detection (Phase 15); AI interpreter (Phase 9, must produce the same structured shape); paid-call budget reservation (first paid lead vendor)
+
+## Phase 8 — Definition of Done
+- [x] Schema: ResearchRun (steps, gaps, lease), Website, WebsiteSnapshot (URL, time, sha256, extracted text — not the page), WebsiteAudit (null = could not tell), Technology + CompanyTechnology (goneAt keeps history), SocialProfile, OpportunityHypothesis + HypothesisEvidence (docs/09 hypothesis states)
+- [x] Controlled website reader `web_fetcher` (WEBSITE_FETCH capability): http(s) on standard ports only, no credentials, private/loopback/link-local/CGNAT/reserved IPv4+IPv6 blocked on every redirect and inside DNS lookup (no DNS rebinding), HTML only, size + time limits, no cookies; a dead website is data, not a provider failure. `fake_websites` reads the fictional `.example` sites of the test lead sources (some no https/booking/form/mobile, some name an owner, some hide bot instructions)
+- [x] Deterministic research first (`@revenue-os/shared/research`): metadata, forms vs search boxes, booking and chat tools, CTAs, social links (share buttons ignored), published emails (mailto/text) and tel: phones, technologies, copyright year, people named with a role; page text is untrusted data — instructions in it are only flagged
+- [x] Pipeline per company: website (home + contact + about) → snapshots as evidence → audit → facts `website.*` with the page that shows each (a newer scan supersedes, history kept) → technology → social → published contacts (UNVERIFIED, nothing guessed, removed ones not revived) → people as Person + Employment (LOW confidence, unverified) with WEBSITE_MENTION evidence and a role fact → email verification through the gateway (VALID → VERIFIED, INVALID → INVALID, RISKY/CATCH_ALL/UNKNOWN stay unverified, max 5 per run, not repeated within 30 days)
+- [x] Opportunity hypotheses from rules (no website, not loading, no https, not mobile-ready, no contact form, no online booking, no clear CTA, outdated, no chat): always "may", cite evidence, confidence with reasons, one per company + kind, invalidated (not deleted) when a later complete check no longer supports them; nothing concluded from checks that could not run
+- [x] Automatic: CompanyDiscovered → research job (one run per company under an advisory lock, skipped if researched in the last 14 days); manual: "Research now" (`POST /companies/:id/research`, 202, new permission `company.research` for owner/admin/sales/researcher); rate limits hand the run back and the job retries; PARTIAL runs name their gaps (no reader / no verifier / site down / no email / no decision maker)
+- [x] Contactability in words (verified email of a likely decision maker = HIGH; verified ≠ allowed to contact), decision makers ranked by role fit (not authority)
+- [x] Screens: Company 360 — research bar (status, gaps, Research now/again, live refresh), Opportunity block (hypothesis count, not a score), Contactability, Digital presence tab (checks with page links, hypotheses with evidence, technology, social, pages read with fingerprints and bot-text warning, last run steps); Lead Hunter hunt — "Researched N / M" stat and a research badge per business
+- [x] Tests: analyzer/audit/hypotheses/contactability unit tests, fetcher SSRF + local-server tests, fake website tests, research integration (evidence-backed profile, nothing guessed, VALID/RISKY verification, idempotent re-run, no website → listing evidence, stale hypothesis invalidated, unreachable site, no reader → PARTIAL, discovery dedupe)
+- Deferred by plan: AI interpretation of pages and AI-written hypotheses (Phase 9 — must cite the same evidence), search-provider research beyond the official site and hiring/expansion signals (Phase 15), mission ENRICHING state (research runs per company, independent of the hunt), robots.txt and per-site crawl politeness beyond rate limits (Phase 22 hardening), snapshot bodies in object storage (only hash + extracted text kept)
+- After pulling: `pnpm install`, `pnpm db:deploy`, `pnpm db:seed` (new permission), then connect "Test website reader" and "Test email verifier" in Integrations
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

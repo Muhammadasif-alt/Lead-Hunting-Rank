@@ -14,6 +14,7 @@ export const PERMISSIONS = {
   'company.update': { class: 'B', description: 'Create and edit companies, people and contact points' },
   'company.merge': { class: 'B', description: 'Merge duplicate companies or mark them as not duplicates (history is kept)' },
   'evidence.manage': { class: 'B', description: 'Add evidence and correct facts' },
+  'company.research': { class: 'B', description: 'Research companies: read their website, find published contacts, verify emails (spends verification credits)' },
   'market.read': { class: 'A', description: 'View markets and discovery missions' },
   'market.create': { class: 'B', description: 'Define markets' },
   'market.run': { class: 'B', description: 'Run discovery missions (spends research budget)' },
@@ -71,6 +72,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   SALES: [
     ...READ,
     'company.update',
+    'company.research',
     'campaign.pause',
     'conversation.send',
     'conversation.takeover',
@@ -84,7 +86,7 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     'task.manage',
     'outbound.pause',
   ],
-  RESEARCHER: [...READ, 'company.update', 'company.merge', 'evidence.manage', 'market.create', 'market.run', 'task.manage'],
+  RESEARCHER: [...READ, 'company.update', 'company.merge', 'company.research', 'evidence.manage', 'market.create', 'market.run', 'task.manage'],
   VIEWER: READ,
 };
 

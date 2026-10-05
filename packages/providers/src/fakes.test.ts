@@ -14,6 +14,7 @@ import { FakeDirectoryProvider, FakeLeadProvider } from './fakes/leads.js';
 import { FakeLLMProvider } from './fakes/llm.js';
 import { FakeNotificationProvider } from './fakes/notification.js';
 import { FakeVerificationProvider } from './fakes/verification.js';
+import { FakeWebsiteProvider } from './fakes/websites.js';
 import { LocalStorageProvider } from './storage/local.js';
 
 const o = () => ({ signal: AbortSignal.timeout(5000) });
@@ -124,6 +125,30 @@ describe('Fake lead sources', () => {
 
   test('rejects uncovered countries', async () => {
     await assert.rejects(new FakeLeadProvider().searchCompanies({ ...input, location: { country: 'ZZ' } }, o()), (e) => e instanceof ProviderCallError && e.kind === 'INVALID_REQUEST');
+  });
+});
+
+describe('FakeWebsiteProvider', () => {
+  test('the same domain always reads the same; home, contact and about exist; other paths are 404', async () => {
+    const web = new FakeWebsiteProvider();
+    const a = await web.fetchPage('http://lonestarlandscapingco.example/', o());
+    const b = await new FakeWebsiteProvider().fetchPage('http://lonestarlandscapingco.example/', o());
+    assert.deepEqual({ ...a, fetchedAt: '' }, { ...b, fetchedAt: '' });
+    if (a.failure) return; // this domain happens to be one of the sites that don't load
+    assert.equal(a.status, 200);
+    assert.match(a.body, /<title>/);
+    assert.equal((await web.fetchPage(`${new URL(a.finalUrl).origin}/contact`, o())).status, 200);
+    assert.equal((await web.fetchPage(`${new URL(a.finalUrl).origin}/nope`, o())).failure, 'HTTP_ERROR');
+  });
+
+  test('across many sites: some lack https, some do not load, some name an owner; real domains are never fetched', async () => {
+    const web = new FakeWebsiteProvider();
+    const pages = await Promise.all(Array.from({ length: 60 }, (_, i) => web.fetchPage(`http://site${i}.example/`, o())));
+    assert.ok(pages.some((p) => p.failure === 'TIMEOUT'), 'some sites do not load');
+    assert.ok(pages.some((p) => p.finalUrl.startsWith('http://') && !p.failure), 'some have no https');
+    assert.ok(pages.some((p) => p.finalUrl.startsWith('https://')), 'most have https');
+    const real = await web.fetchPage('https://www.google.com/', o());
+    assert.equal(real.failure, 'UNREACHABLE');
   });
 });
 

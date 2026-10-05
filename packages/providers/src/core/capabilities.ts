@@ -11,6 +11,7 @@ export const CAPABILITIES = [
   'COMPANY_ENRICH',
   'PERSON_ENRICH',
   'EMAIL_VERIFY',
+  'WEBSITE_FETCH',
   'LLM_REASONING',
   'LLM_EXTRACTION',
   'EMBEDDINGS',
@@ -22,7 +23,7 @@ export type Capability = (typeof CAPABILITIES)[number];
 /** Capabilities whose call changes the outside world. Their unclear failures are "maybe it happened" — never retried blindly. */
 export const SIDE_EFFECT_CAPABILITIES: ReadonlySet<Capability> = new Set(['EMAIL_SEND', 'CALENDAR_WRITE', 'NOTIFY']);
 
-export const PROVIDER_CATEGORIES = ['EMAIL', 'CALENDAR', 'LEAD_DATA', 'ENRICHMENT', 'VERIFICATION', 'AI', 'STORAGE', 'NOTIFICATIONS'] as const;
+export const PROVIDER_CATEGORIES = ['EMAIL', 'CALENDAR', 'LEAD_DATA', 'ENRICHMENT', 'VERIFICATION', 'WEB', 'AI', 'STORAGE', 'NOTIFICATIONS'] as const;
 export type ProviderCategory = (typeof PROVIDER_CATEGORIES)[number];
 
 /** docs/12 §89-90 — an UNKNOWN cost is labelled as such, never given fake precision. */

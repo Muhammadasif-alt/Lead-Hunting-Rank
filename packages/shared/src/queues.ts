@@ -37,6 +37,8 @@ export const JOBS = {
   discoveryAdvance: 'discovery.mission.advance',
   /** Periodic: missions whose worker died mid-round, or whose WAITING retry time has come, get advanced again. */
   discoverySweep: 'discovery.sweep',
+  /** Research one company: website, checks, contacts, verification, hypotheses. Payload: ResearchRunJobData. */
+  researchRun: 'research.company.run',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -81,5 +83,15 @@ export interface DiscoveryAdvanceJobData extends JobTracing {
 export interface ExternalActionJobData extends JobTracing {
   workspaceId: string;
   externalActionId: string;
+  schemaVersion: 1;
+}
+
+export interface ResearchRunJobData extends JobTracing {
+  workspaceId: string;
+  companyId: string;
+  /** Set when a person asked (the run already exists, QUEUED). Discovery jobs create their run if one is due. */
+  runId?: string;
+  trigger: 'DISCOVERY' | 'MANUAL';
+  missionId?: string;
   schemaVersion: 1;
 }
