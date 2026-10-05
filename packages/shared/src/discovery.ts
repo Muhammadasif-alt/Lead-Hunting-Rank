@@ -89,6 +89,26 @@ export const INDUSTRIES: IndustryDefinition[] = [
   { key: 'contractors', label: 'General contractors', synonyms: ['contractor', 'contractors', 'general contractor', 'general contractors', 'remodeler', 'remodelers'], related: ['home remodeling', 'kitchen remodeling', 'bathroom remodeling', 'home builders', 'handyman'] },
   { key: 'restaurants', label: 'Restaurants', synonyms: ['restaurant', 'restaurants'], related: ['cafe', 'catering', 'food truck', 'bakery'] },
   { key: 'auto repair', label: 'Auto repair', synonyms: ['auto repair', 'mechanic', 'mechanics', 'auto shop', 'auto shops', 'car repair'], related: ['brake repair', 'oil change', 'transmission repair', 'auto body shop', 'tire shop'] },
+  { key: 'painting', label: 'Painters', synonyms: ['painter', 'painters', 'painting company', 'painting contractor', 'house painter', 'house painters'], related: ['interior painting', 'exterior painting', 'commercial painting', 'cabinet painting'] },
+  { key: 'flooring', label: 'Flooring', synonyms: ['flooring', 'flooring company', 'flooring contractor', 'floor installer', 'floor installers'], related: ['hardwood flooring', 'tile installation', 'carpet installation', 'vinyl flooring', 'floor refinishing'] },
+  { key: 'pool service', label: 'Pool services', synonyms: ['pool service', 'pool services', 'pool cleaning', 'pool company', 'pool builder', 'pool builders'], related: ['pool repair', 'pool installation', 'hot tub service', 'pool maintenance'] },
+  { key: 'solar', label: 'Solar installers', synonyms: ['solar', 'solar installer', 'solar installers', 'solar company', 'solar companies'], related: ['solar panel installation', 'battery storage', 'solar repair', 'commercial solar'] },
+  { key: 'locksmiths', label: 'Locksmiths', synonyms: ['locksmith', 'locksmiths'], related: ['emergency locksmith', 'car locksmith', 'commercial locksmith', 'safe services'] },
+  { key: 'garage doors', label: 'Garage door services', synonyms: ['garage door', 'garage doors', 'garage door repair', 'garage door company'], related: ['garage door installation', 'garage door opener repair', 'commercial doors'] },
+  { key: 'moving', label: 'Moving companies', synonyms: ['mover', 'movers', 'moving company', 'moving companies', 'removalists', 'removals'], related: ['local movers', 'long distance movers', 'packing services', 'storage'] },
+  { key: 'chiropractors', label: 'Chiropractors', synonyms: ['chiropractor', 'chiropractors', 'chiropractic'], related: ['sports chiropractor', 'massage therapy', 'physical therapy'] },
+  { key: 'physiotherapy', label: 'Physiotherapists', synonyms: ['physiotherapist', 'physiotherapists', 'physiotherapy', 'physical therapist', 'physical therapists'], related: ['sports physiotherapy', 'rehabilitation clinic', 'massage therapy'] },
+  { key: 'med spas', label: 'Med spas', synonyms: ['med spa', 'med spas', 'medical spa', 'aesthetic clinic', 'aesthetic clinics'], related: ['botox', 'laser hair removal', 'skin care clinic', 'cosmetic clinic'] },
+  { key: 'veterinarians', label: 'Veterinarians', synonyms: ['vet', 'vets', 'veterinarian', 'veterinarians', 'animal hospital', 'vet clinic'], related: ['emergency vet', 'pet grooming', 'pet boarding', 'dog trainer'] },
+  { key: 'gyms', label: 'Gyms & fitness', synonyms: ['gym', 'gyms', 'fitness center', 'fitness centre', 'fitness studio'], related: ['personal trainer', 'yoga studio', 'pilates studio', 'crossfit', 'martial arts'] },
+  { key: 'accountants', label: 'Accountants', synonyms: ['accountant', 'accountants', 'accounting firm', 'cpa', 'bookkeeper', 'bookkeepers'], related: ['tax preparation', 'bookkeeping', 'payroll services', 'financial advisor'] },
+  { key: 'insurance', label: 'Insurance agents', synonyms: ['insurance agent', 'insurance agents', 'insurance agency', 'insurance broker', 'insurance brokers'], related: ['auto insurance', 'home insurance', 'life insurance', 'business insurance'] },
+  { key: 'marketing agencies', label: 'Marketing agencies', synonyms: ['marketing agency', 'marketing agencies', 'digital agency', 'seo agency', 'advertising agency'], related: ['web design', 'seo services', 'social media marketing', 'branding agency'] },
+  { key: 'photographers', label: 'Photographers', synonyms: ['photographer', 'photographers', 'photography studio'], related: ['wedding photographer', 'portrait photographer', 'videographer', 'event photographer'] },
+  { key: 'florists', label: 'Florists', synonyms: ['florist', 'florists', 'flower shop', 'flower shops'], related: ['wedding flowers', 'flower delivery', 'event decor'] },
+  { key: 'hotels', label: 'Hotels', synonyms: ['hotel', 'hotels', 'motel', 'motels', 'guest house', 'bed and breakfast'], related: ['boutique hotel', 'vacation rental', 'hostel', 'resort'] },
+  { key: 'car dealers', label: 'Car dealerships', synonyms: ['car dealer', 'car dealers', 'car dealership', 'car dealerships', 'auto dealer'], related: ['used car dealer', 'motorcycle dealer', 'rv dealer', 'car rental'] },
+  { key: 'schools', label: 'Schools & tutoring', synonyms: ['school', 'schools', 'tutor', 'tutors', 'tutoring', 'academy'], related: ['driving school', 'music lessons', 'language school', 'daycare'] },
 ];
 
 const clean = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -358,7 +378,11 @@ export interface RoundStats {
   cumulativeUnique: number;
 }
 
-export type StopReason = 'SATURATED' | 'STRATEGIES_EXHAUSTED' | 'ROUND_LIMIT' | 'QUERY_BUDGET' | 'CALL_BUDGET' | 'STOPPED_BY_USER';
+export type StopReason = 'SATURATED' | 'STRATEGIES_EXHAUSTED' | 'ROUND_LIMIT' | 'QUERY_BUDGET' | 'CALL_BUDGET' | 'STOPPED_BY_USER' | 'TARGET_REACHED';
+
+/** "How many leads do you want?" — a hunt stops once it has found this many unique businesses (null = no limit). */
+export const LEAD_TARGETS: (number | null)[] = [20, 50, 100, 200, 500, null];
+export const MAX_LEAD_TARGET = 1000;
 
 export interface CoverageAssessment {
   decision: 'CONTINUE' | 'COMPLETE';
@@ -394,6 +418,8 @@ export function assessCoverage(input: {
   sourcesSearched: number;
   strategyTypesSearched: number;
   stoppedByUser?: boolean;
+  /** The person's lead target; reaching it ends the hunt early (it says nothing about the rest of the market). */
+  targetCount?: number | null;
 }): CoverageAssessment {
   const profile = DISCOVERY_MODES[input.mode];
   const last = input.rounds.at(-1);
@@ -408,7 +434,9 @@ export function assessCoverage(input: {
   if (last) reasons.push(`Round ${last.round} added ${last.newUnique} new ${last.newUnique === 1 ? 'business' : 'businesses'} (${pct(marginalYield)} of ${unique} found)`);
 
   let stopReason: StopReason | null = null;
+  const targetReached = !!input.targetCount && unique >= input.targetCount;
   if (input.stoppedByUser) stopReason = 'STOPPED_BY_USER';
+  else if (targetReached) stopReason = 'TARGET_REACHED';
   else if (saturated) stopReason = 'SATURATED';
   else if (input.strategiesRemaining === 0) stopReason = 'STRATEGIES_EXHAUSTED';
   else if (input.rounds.length >= profile.maxRounds) stopReason = 'ROUND_LIMIT';
@@ -436,6 +464,7 @@ export function assessCoverage(input: {
     if (!saturated) reasons.push('Stopped before new results dried up');
   }
   reasons.push(`${pct(duplicateRate)} of listings were businesses already found`);
+  if (targetReached && !saturated) reasons.unshift(`Reached your target of ${input.targetCount} leads — the rest of the market was not searched`);
 
   return { decision: stopReason ? 'COMPLETE' : 'CONTINUE', stopReason, confidence, marginalYield, duplicateRate, reasons };
 }
@@ -447,4 +476,5 @@ export const STOP_REASON_LABEL: Record<StopReason, string> = {
   QUERY_BUDGET: 'Query budget reached',
   CALL_BUDGET: 'Provider call budget reached',
   STOPPED_BY_USER: 'Stopped by a person',
+  TARGET_REACHED: 'Your lead target was reached',
 };

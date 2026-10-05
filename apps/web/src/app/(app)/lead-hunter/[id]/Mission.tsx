@@ -43,7 +43,12 @@ type WebsiteOpt = "any" | "with" | "without";
 type PhoneOpt = "any" | "with";
 type OutcomeOpt = "" | "CREATED" | "MATCHED_EXISTING";
 
-const PAGE = 25;
+const PAGE_SIZES = [20, 50, 100, 200];
+
+/** Rows per page: the smallest size that fits the lead target, else 50. */
+function defaultPageSize(target: number | null): number {
+  return (target && PAGE_SIZES.find((n) => n >= target)) || 50;
+}
 
 /**
  * A live hunt (screen #3 mission view, Phase 7). Polls while the engine works; every number is a real count from the
@@ -261,7 +266,8 @@ function StatusNote({ data }: { data: MissionDetail }) {
   if (isActive(s)) {
     return (
       <p className="text-sm text-muted">
-        Round {Math.max(1, data.currentRound)} of up to {data.maxRounds}. This page updates by itself.
+        Round {Math.max(1, data.currentRound)} of up to {data.maxRounds}
+        {data.targetCount ? ` · stops at ${data.targetCount} leads` : ""}. This page updates by itself.
       </p>
     );
   }
@@ -297,7 +303,12 @@ function Counters({ data }: { data: MissionDetail }) {
             data.rejectedObservations ? `${data.rejectedObservations} rejected (no name / outside area)` : undefined
           }
         />
-        <Stat label="Unique businesses" value={data.uniqueCompanies} strong />
+        <Stat
+          label="Unique businesses"
+          value={data.uniqueCompanies}
+          hint={data.targetCount ? `Target: ${data.targetCount} leads` : "No lead limit"}
+          strong
+        />
         <Stat label="New to CRM" value={data.newCompanies} />
         <Stat label="Already in CRM" value={data.matchedExisting} />
         <Stat label="Duplicate listings merged" value={data.duplicateObservations} />
@@ -540,11 +551,12 @@ function Results({ data, initialWebsite }: { data: MissionDetail; initialWebsite
   const [error, setError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [stale, setStale] = useState(false);
+  const [pageSize, setPageSize] = useState(() => defaultPageSize(data.targetCount));
   const loaded = useRef(0);
 
   const load = useCallback(
     async (cursor?: string) => {
-      const params = new URLSearchParams({ limit: String(PAGE), website, phone });
+      const params = new URLSearchParams({ limit: String(pageSize), website, phone });
       if (outcome) params.set("outcome", outcome);
       if (q.trim()) params.set("q", q.trim());
       if (cursor) params.set("cursor", cursor);
@@ -561,7 +573,7 @@ function Results({ data, initialWebsite }: { data: MissionDetail; initialWebsite
         setError(errorMessage(err));
       }
     },
-    [data.id, website, phone, outcome, q],
+    [data.id, website, phone, outcome, q, pageSize],
   );
 
   // Filters (search debounced).
@@ -576,9 +588,9 @@ function Results({ data, initialWebsite }: { data: MissionDetail; initialWebsite
   useEffect(() => {
     if (lastKey.current === changeKey) return;
     lastKey.current = changeKey;
-    if (loaded.current <= PAGE) void load();
+    if (loaded.current <= pageSize) void load();
     else setStale(true);
-  }, [changeKey, load]);
+  }, [changeKey, load, pageSize]);
 
   const filtered = website !== "any" || phone !== "any" || !!outcome || !!q.trim();
 
@@ -601,7 +613,7 @@ function Results({ data, initialWebsite }: { data: MissionDetail; initialWebsite
         )}
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_repeat(3,11rem)]">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_repeat(4,10rem)]">
         <label className="relative sm:col-span-2 lg:col-span-1">
           <span className="sr-only">Search businesses</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
@@ -633,6 +645,16 @@ function Results({ data, initialWebsite }: { data: MissionDetail; initialWebsite
             <option value="">All outcomes</option>
             <option value="CREATED">New to CRM</option>
             <option value="MATCHED_EXISTING">Already in CRM</option>
+          </select>
+        </label>
+        <label>
+          <span className="sr-only">Rows per page</span>
+          <select className="input" value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+            {PAGE_SIZES.map((n) => (
+              <option key={n} value={n}>
+                Show {n}
+              </option>
+            ))}
           </select>
         </label>
       </div>

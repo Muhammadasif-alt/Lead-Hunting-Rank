@@ -205,6 +205,9 @@ importers:
       bullmq:
         specifier: ^6.3.11
         version: 6.3.11(ioredis@6.0.0)(pg@8.23.1)
+      country-state-city:
+        specifier: 3.2.1
+        version: 3.2.1
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0
@@ -1258,6 +1261,9 @@ packages:
   cors@2.8.6:
     resolution: {integrity: sha512-tJtZBBHA6vjIAaF6EnIaq6laBBP9aq/Y3ouVJjEfoHbRBcHBAHYcMh/w8LDrk2PvIMMq8gmopa5D4V8RmbrxGw==}
     engines: {node: '>= 0.10'}
+
+  country-state-city@3.2.1:
+    resolution: {integrity: sha512-kxbanqMc6izjhc/EHkGPCTabSPZ2G6eG4/97akAYHJUN4stzzFEvQPZoF8oXDQ+10gM/O/yUmISCR1ZVxyb6EA==}
 
   cron-parser@5.10.1:
     resolution: {integrity: sha512-pKRrRagItwk9rGIStcUyMxFX34x56zoX3KDf9HJ4ttwkXIK1qxK63EvXvEDmlxI9AdPJ+Y7TEKRftRlW5eSS7A==}
@@ -2998,6 +3004,8 @@ snapshots:
     dependencies:
       object-assign: 4.1.1
       vary: 1.1.2
+
+  country-state-city@3.2.1: {}
 
   cron-parser@5.10.1:
     dependencies:

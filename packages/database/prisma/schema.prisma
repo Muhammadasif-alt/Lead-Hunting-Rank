@@ -1201,6 +1201,8 @@ enum DiscoveryStopReason {
   QUERY_BUDGET
   CALL_BUDGET
   STOPPED_BY_USER
+  /// The person asked for N leads and the hunt found them — the market was not searched to the end.
+  TARGET_REACHED
 }
 
 /**
@@ -1221,6 +1223,8 @@ model DiscoveryMission {
   maxRounds             Int
   maxQueries            Int
   maxProviderCalls      Int
+  /// How many unique businesses the person wants; null = search the market as deep as the mode allows.
+  targetCount           Int?
   currentRound          Int                     @default(0)
   queriesExecuted       Int                     @default(0)
   providerCalls         Int                     @default(0)

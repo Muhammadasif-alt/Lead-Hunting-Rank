@@ -20,7 +20,7 @@ import {
   COUNTRIES,
   DISCOVERY_MODES,
   INDUSTRIES,
-  US_STATES,
+  LEAD_TARGETS,
   formatLocation,
   industryLabel,
   interpretMarketRequest,
@@ -32,6 +32,7 @@ import { PageHeader } from "@/components/app/PageHeader";
 import { MediaSplit } from "@/components/ui/MediaSplit";
 import { ApiError, api, errorMessage, post } from "@/lib/api";
 import { formatAgo } from "@/lib/crm";
+import { useCities, useCountries, useRegions } from "@/lib/geo";
 import {
   COVERAGE_CLASS,
   COVERAGE_LABEL,
@@ -68,10 +69,6 @@ const PIPELINE: { title: string; detail: string }[] = [
   },
 ];
 
-const STATE_OPTIONS = Object.entries(US_STATES)
-  .map(([name, code]) => ({ code, name: name.replace(/\b\w/g, (c) => c.toUpperCase()) }))
-  .sort((a, b) => a.name.localeCompare(b.name));
-
 const WEBSITE_FILTERS: { value: WebsiteFilter; label: string }[] = [
   { value: "ANY", label: "Every business" },
   { value: "WITHOUT", label: "Without a website" },
@@ -102,6 +99,7 @@ export function LeadHunter() {
   const [mode, setMode] = useState<DiscoveryMode>("DEEP");
   const [categories, setCategories] = useState<string[] | null>(null);
   const [websiteFilter, setWebsiteFilter] = useState<WebsiteFilter>("ANY");
+  const [target, setTarget] = useState<number | null>(50);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -183,7 +181,9 @@ export function LeadHunter() {
   function setField<K extends keyof Fields>(key: K, value: Fields[K]) {
     setFields((prev) => {
       const next = { ...prev, [key]: value };
-      if (key === "country" && (prev.country === "US") !== (value === "US")) next.region = "";
+      // A new country starts with its whole territory; a new state with all of its cities.
+      if (key === "country" && value !== prev.country) Object.assign(next, { region: "", city: "" });
+      if (key === "region" && value !== prev.region) next.city = "";
       return next;
     });
     if (key === "industry") setCategories(null);
@@ -211,6 +211,7 @@ export function LeadHunter() {
         city: fields.city.trim() || undefined,
         mode,
         categories: mode === "QUICK" ? [] : selected,
+        targetCount: target,
       });
       const qs = websiteFilter === "ANY" ? "" : `?website=${websiteFilter.toLowerCase()}`;
       router.push(`/lead-hunter/${res.mission.id}${qs}`);
@@ -318,72 +319,7 @@ export function LeadHunter() {
             </form>
 
             {/* 2. Structured market */}
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="block">
-                <span className="text-xs font-medium text-muted">Country</span>
-                <select
-                  className="input mt-1.5"
-                  value={fields.country}
-                  onChange={(e) => setField("country", e.target.value)}
-                >
-                  {COUNTRIES.map((c) => (
-                    <option key={c.code} value={c.code}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-muted">State / region</span>
-                {fields.country === "US" ? (
-                  <select
-                    className="input mt-1.5"
-                    value={fields.region}
-                    onChange={(e) => setField("region", e.target.value)}
-                  >
-                    <option value="">Whole country</option>
-                    {STATE_OPTIONS.map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.name}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    className="input mt-1.5"
-                    value={fields.region}
-                    placeholder="Optional"
-                    onChange={(e) => setField("region", e.target.value)}
-                  />
-                )}
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-muted">City / area</span>
-                <input
-                  className="input mt-1.5"
-                  value={fields.city}
-                  placeholder="Optional, e.g. Austin"
-                  onChange={(e) => setField("city", e.target.value)}
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-medium text-muted">Business type</span>
-                <input
-                  className="input mt-1.5"
-                  list="lh-industries"
-                  value={fields.industry}
-                  placeholder="e.g. landscaping"
-                  onChange={(e) => setField("industry", e.target.value)}
-                />
-                <datalist id="lh-industries">
-                  {INDUSTRIES.map((i) => (
-                    <option key={i.key} value={i.key}>
-                      {i.label}
-                    </option>
-                  ))}
-                </datalist>
-              </label>
-            </div>
+            <MarketFields fields={fields} onChange={setField} />
 
             {/* 3. Depth */}
             <fieldset>
@@ -487,7 +423,24 @@ export function LeadHunter() {
             </fieldset>
 
             {/* 5. Results view + enrichment note */}
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <label className="block">
+                <span className="text-xs font-medium text-muted">How many leads</span>
+                <select
+                  className="input mt-1.5"
+                  value={target ?? ""}
+                  onChange={(e) => setTarget(e.target.value ? Number(e.target.value) : null)}
+                >
+                  {LEAD_TARGETS.map((n) => (
+                    <option key={n ?? "all"} value={n ?? ""}>
+                      {n ? `${n} leads` : "As many as the depth finds"}
+                    </option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-[11px] text-faint">
+                  The hunt stops once it has found this many unique businesses — fewer provider calls.
+                </span>
+              </label>
               <label className="block">
                 <span className="text-xs font-medium text-muted">Show in results</span>
                 <select
@@ -551,7 +504,8 @@ export function LeadHunter() {
                   <>
                     <span className="font-medium text-fg">{preview.market.name}</span> ·{" "}
                     {MODE_LABEL[preview.mode] ?? preview.mode} · {preview.strategies}{" "}
-                    {preview.strategies === 1 ? "query plan" : "query plans"} per source
+                    {preview.strategies === 1 ? "query plan" : "query plans"} per source ·{" "}
+                    {target ? `up to ${target} leads` : "no lead limit"}
                     {preview.market.existingMarketId && " · saved market, new run"}
                   </>
                 ) : (
@@ -613,6 +567,140 @@ export function LeadHunter() {
           </MediaSplit>
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * Country → state/region → city → business type, all as picklists so nobody has to know a country's states or
+ * spell a city. Regions and cities come from the API's reference data; a value set by the typed request that isn't
+ * in a list (e.g. a small town) is kept as an extra option rather than silently dropped.
+ */
+function MarketFields({
+  fields,
+  onChange,
+}: {
+  fields: Fields;
+  onChange: <K extends keyof Fields>(key: K, value: Fields[K]) => void;
+}) {
+  const countries = useCountries();
+  const regions = useRegions(fields.country);
+  const noRegions = !!regions.data && regions.data.regions.length === 0;
+  const cities = useCities(fields.country, noRegions ? "" : fields.region, noRegions || !!fields.region);
+
+  const countryList = countries.data?.items ?? COUNTRIES.map((c) => ({ code: c.code, name: c.name, main: true }));
+  const main = countryList.filter((c) => c.main);
+  const other = countryList.filter((c) => !c.main);
+  const regionList = regions.data?.regions ?? [];
+  const cityList = cities.data?.items ?? [];
+  const countryName = countryList.find((c) => c.code === fields.country)?.name ?? fields.country;
+  const regionName = regionList.find((r) => r.value === fields.region)?.name ?? fields.region;
+  const industryKnown = INDUSTRIES.some((i) => i.key === fields.industry || i.related.includes(fields.industry));
+
+  const countryOption = (c: { code: string; name: string }) => (
+    <option key={c.code} value={c.code}>
+      {c.name}
+    </option>
+  );
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <label className="block">
+        <span className="text-xs font-medium text-muted">Country</span>
+        <select className="input mt-1.5" value={fields.country} onChange={(e) => onChange("country", e.target.value)}>
+          {!countryList.some((c) => c.code === fields.country) && (
+            <option value={fields.country}>{fields.country}</option>
+          )}
+          {other.length > 0 ? (
+            <>
+              <optgroup label="Main markets — US, Australia, New Zealand, Europe">{main.map(countryOption)}</optgroup>
+              <optgroup label="Other countries">{other.map(countryOption)}</optgroup>
+            </>
+          ) : (
+            main.map(countryOption)
+          )}
+        </select>
+      </label>
+
+      <label className="block">
+        <span className="text-xs font-medium text-muted">
+          State / region
+          {regionList.length > 0 && <span className="font-normal text-faint"> · {regionList.length}</span>}
+        </span>
+        <select
+          className="input mt-1.5"
+          value={fields.region}
+          disabled={regions.loading || noRegions}
+          onChange={(e) => onChange("region", e.target.value)}
+        >
+          <option value="">
+            {regions.loading ? "Loading…" : noRegions ? "No states — pick a city" : `All of ${countryName}`}
+          </option>
+          {fields.region && !regions.loading && !regionList.some((r) => r.value === fields.region) && (
+            <option value={fields.region}>{fields.region}</option>
+          )}
+          {regionList.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.name}
+            </option>
+          ))}
+        </select>
+        {regions.error && <span className="mt-1 block text-[11px] text-danger">Couldn&apos;t load states.</span>}
+      </label>
+
+      <label className="block">
+        <span className="text-xs font-medium text-muted">
+          City / area
+          {cityList.length > 0 && <span className="font-normal text-faint"> · {cityList.length}</span>}
+        </span>
+        <select
+          className="input mt-1.5"
+          value={fields.city}
+          disabled={cities.loading || (!fields.region && !noRegions && !fields.city)}
+          onChange={(e) => onChange("city", e.target.value)}
+        >
+          <option value="">
+            {cities.loading
+              ? "Loading cities…"
+              : fields.region
+                ? `All of ${regionName}`
+                : noRegions
+                  ? `All of ${countryName}`
+                  : "Pick a state first"}
+          </option>
+          {fields.city && !cities.loading && !cityList.includes(fields.city) && (
+            <option value={fields.city}>{fields.city}</option>
+          )}
+          {cityList.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        {cities.error && <span className="mt-1 block text-[11px] text-danger">Couldn&apos;t load cities.</span>}
+      </label>
+
+      <label className="block">
+        <span className="text-xs font-medium text-muted">Business type</span>
+        <select className="input mt-1.5" value={fields.industry} onChange={(e) => onChange("industry", e.target.value)}>
+          <option value="">Choose a business type…</option>
+          {fields.industry && !industryKnown && (
+            <option value={fields.industry}>{industryLabel(fields.industry)}</option>
+          )}
+          {[...INDUSTRIES]
+            .sort((a, b) => a.label.localeCompare(b.label))
+            .map((i) => (
+              <optgroup key={i.key} label={i.label}>
+                <option value={i.key}>{i.label} — all</option>
+                {i.related.map((r) => (
+                  <option key={r} value={r}>
+                    {r.replace(/^\w/, (c) => c.toUpperCase())}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+        </select>
+      </label>
     </div>
   );
 }

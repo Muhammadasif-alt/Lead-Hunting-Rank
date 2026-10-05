@@ -143,6 +143,7 @@ export class DiscoveryService {
           maxRounds: profile.maxRounds,
           maxQueries: profile.maxQueries,
           maxProviderCalls: profile.maxProviderCalls,
+          targetCount: input.targetCount ?? null,
           createdBy: actorUserId(ctx),
           startedAt: new Date(),
         },
@@ -151,7 +152,7 @@ export class DiscoveryService {
         action: 'discovery_mission.started',
         entityType: 'DISCOVERY_MISSION',
         entityId: mission.id,
-        after: { marketId: market.id, mode: mission.mode, categories: mission.categories, maxRounds: mission.maxRounds, maxQueries: mission.maxQueries, maxProviderCalls: mission.maxProviderCalls },
+        after: { marketId: market.id, mode: mission.mode, categories: mission.categories, maxRounds: mission.maxRounds, maxQueries: mission.maxQueries, maxProviderCalls: mission.maxProviderCalls, targetCount: mission.targetCount },
       });
       await recordEvent(tx, ctx, 'DiscoveryMissionStarted', mission.id, { missionId: mission.id, marketId: market.id, mode: mission.mode });
       return mission.id;

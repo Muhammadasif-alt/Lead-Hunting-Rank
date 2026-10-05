@@ -21,6 +21,7 @@
     "@revenue-os/providers": "workspace:*",
     "@revenue-os/shared": "workspace:*",
     "bullmq": "^6.3.11",
+    "country-state-city": "3.2.1",
     "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",

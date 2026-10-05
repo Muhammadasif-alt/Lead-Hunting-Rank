@@ -74,6 +74,15 @@ test('keeps hunting while new businesses keep appearing; stops when the yield dr
   assert.ok(done.marginalYield < 0.02);
 });
 
+test('a lead target ends the hunt early and says the market was not searched to the end', () => {
+  const r = assessCoverage({ ...base, rounds: rounds(143), targetCount: 100 });
+  assert.equal(r.decision, 'COMPLETE');
+  assert.equal(r.stopReason, 'TARGET_REACHED');
+  assert.notEqual(r.confidence, 'HIGH');
+  assert.ok(r.reasons[0]?.includes('target of 100'));
+  assert.equal(assessCoverage({ ...base, rounds: rounds(143), targetCount: 200 }).decision, 'CONTINUE');
+});
+
 test('coverage confidence stays honest: one source or an early stop is never HIGH', () => {
   const single = assessCoverage({ ...base, sourcesSearched: 1, rounds: rounds(143, 39, 11, 2) });
   assert.equal(single.stopReason, 'SATURATED');

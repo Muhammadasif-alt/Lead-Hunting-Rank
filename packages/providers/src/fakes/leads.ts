@@ -14,9 +14,17 @@ const STREETS: [short: string, long: string][] = [
   ['Elm St', 'Elm Street'], ['Market St', 'Market Street'], ['Park Rd', 'Park Road'], ['Cedar Dr', 'Cedar Drive'], ['Mill Ln', 'Mill Lane'],
 ];
 
+/** The test sources cover the main markets (US, Australia, New Zealand, Europe) plus Canada and Pakistan. */
+const FAKE_COUNTRIES = [
+  'US', 'CA', 'AU', 'NZ', 'PK', 'GB', 'IE', 'FR', 'DE', 'NL', 'BE', 'LU', 'CH', 'AT', 'IT', 'ES', 'PT', 'DK', 'NO', 'SE', 'FI', 'IS',
+  'PL', 'CZ', 'SK', 'HU', 'SI', 'HR', 'RO', 'BG', 'GR', 'CY', 'MT', 'EE', 'LV', 'LT',
+];
+
 /** One business in the fictional market — what every fake source lists in its own way. */
 interface WorldBusiness {
   index: number;
+  /** Stable id of the business across sources: market fingerprint + index (listing ids must never repeat across markets). */
+  uid: string;
   name: string;
   /** The name without its suffix, as a second listing might show it. */
   shortName: string;
@@ -44,6 +52,7 @@ function marketWorld(location: CompanySearchInput['location'], root: string): Wo
   const pick = <T>(list: T[]) => list[Math.floor(rand() * list.length)]!;
   const noun = industryLabel(root);
   const related = relatedCategories(root);
+  const fingerprint = Math.floor(seededRandom(`${key}|id`)() * 36 ** 6).toString(36).padStart(6, '0');
   const area = 200 + Math.floor(rand() * 700);
   const size = 60 + Math.floor(rand() * 90);
   const names = new Set<string>();
@@ -58,6 +67,7 @@ function marketWorld(location: CompanySearchInput['location'], root: string): Wo
     const number = (n: number) => `+1 ${area} 555 ${String(n).padStart(4, '0')}`;
     businesses.push({
       index,
+      uid: `${fingerprint}-${index}`,
       name: `${prefix} ${noun} ${suffix}`,
       shortName: `${prefix} ${noun}`,
       slug: `${prefix}${noun}${suffix}`.toLowerCase().replace(/[^a-z0-9]+/g, ''),
@@ -98,7 +108,7 @@ class FakeListingSource implements LeadDiscoveryProvider {
   private readonly failures = new FailureQueue();
 
   constructor(private readonly config: ListingSourceConfig) {
-    this.searchMetadata = { countries: ['US', 'GB', 'CA', 'AU', 'PK'], maxPageSize: config.maxPageSize, geoPrecision: 'CITY' as const };
+    this.searchMetadata = { countries: FAKE_COUNTRIES, maxPageSize: config.maxPageSize, geoPrecision: 'CITY' as const };
   }
 
   get key() {
@@ -165,7 +175,7 @@ export class FakeLeadProvider extends FakeListingSource {
           tel: b.phone,
           addr: { street: `${b.houseNumber} ${b.street[0]}`, town: input.location.city ?? null, state: input.location.region ?? null, zip: b.postalCode, country: input.location.country },
           vertical: term,
-          listing_id: `fl-${b.index}${variant ? '-b' : ''}`,
+          listing_id: `fl-${b.uid}${variant ? '-b' : ''}`,
         };
         return {
           sourceRecordId: raw.listing_id,
@@ -209,7 +219,7 @@ export class FakeDirectoryProvider extends FakeListingSource {
             country_code: input.location.country,
           },
           categories: b.tags.map((t) => industryLabel(t)),
-          directory_id: `bd-${b.index}`,
+          directory_id: `bd-${b.uid}`,
           searched_for: term,
         };
         return {

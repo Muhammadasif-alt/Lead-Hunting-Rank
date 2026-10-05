@@ -45,6 +45,7 @@ export function presentMission(m: MissionWithMarket, createdBy: { id: string; na
     maxQueries: m.maxQueries,
     providerCalls: m.providerCalls,
     maxProviderCalls: m.maxProviderCalls,
+    targetCount: m.targetCount,
     failedQueries: m.failedQueries,
     observationsCount: m.observationsCount,
     uniqueCompanies: m.uniqueCompanies,

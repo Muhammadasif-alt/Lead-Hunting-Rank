@@ -307,4 +307,25 @@ describe('Phase 7 — discovery engine', () => {
     const [assessment] = await prisma.client.coverageAssessment.findMany({ where: { missionId } });
     assert.ok(assessment?.reasons.some((r) => /one round/i.test(r)));
   });
+
+  test('a lead target stops the hunt once that many unique businesses are found, with few provider calls', async () => {
+    const ctx = await newWorkspace();
+    await connect(ctx, 'fake_leads', 10);
+    await connect(ctx, 'fake_directory', 20);
+    const { missionId } = await startMission(ctx, 'DEEP', 'plumbing');
+    await prisma.client.discoveryMission.update({ where: { id: missionId }, data: { targetCount: 30 } });
+
+    const { mission } = await runToEnd(missionId);
+    assert.equal(mission.status, 'COMPLETED');
+    assert.equal(mission.stopReason, 'TARGET_REACHED');
+    assert.ok(mission.uniqueCompanies >= 30, `found ${mission.uniqueCompanies}`);
+    assert.ok(mission.uniqueCompanies < 30 + 2 * 20, 'at most a page per source beyond the target');
+    assert.ok(mission.providerCalls <= 6, `used ${mission.providerCalls} calls`);
+    const [first] = await prisma.client.discoveryQuery.findMany({ where: { missionId }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 1 });
+    assert.equal(first?.queryType, 'PRIMARY_CATEGORY', 'the main category is searched first');
+    const open = await prisma.client.discoveryQuery.count({ where: { missionId, status: { in: ['PLANNED', 'RUNNING'] } } });
+    assert.equal(open, 0, 'unfinished queries are closed as skipped');
+    const [assessment] = await prisma.client.coverageAssessment.findMany({ where: { missionId }, orderBy: { round: 'desc' } });
+    assert.ok(assessment?.reasons.some((r) => /target of 30/.test(r)));
+  });
 });

@@ -7,6 +7,7 @@ import { z } from 'zod';
 import { isConnectable, PROVIDER_CATALOG } from './catalog.js';
 import { CAPABILITIES } from './core/capabilities.js';
 import { ProviderCallError } from './core/errors.js';
+import type { CompanySearchInput } from './core/interfaces.js';
 import { FakeCalendarProvider } from './fakes/calendar.js';
 import { FakeEmailProvider } from './fakes/email.js';
 import { FakeDirectoryProvider, FakeLeadProvider } from './fakes/leads.js';
@@ -77,7 +78,7 @@ describe('FakeCalendarProvider', () => {
 
 describe('Fake lead sources', () => {
   const input = { location: { country: 'US', region: 'TX', city: 'Austin' }, industry: 'landscaping' };
-  const all = async (source: FakeLeadProvider | FakeDirectoryProvider, extra: { industry?: string; query?: string } = {}) => {
+  const all = async (source: FakeLeadProvider | FakeDirectoryProvider, extra: Partial<CompanySearchInput> = {}) => {
     const out = [];
     let cursor: string | null = null;
     do {
@@ -113,6 +114,14 @@ describe('Fake lead sources', () => {
     assert.ok(directory.every((x) => x.sourceRecordId.startsWith('bd-')));
     assert.ok(directory.every((x) => /^\(\d{3}\) \d{3}-\d{4}$/.test(x.phone!)), 'directory formats phones its own way');
   });
+
+  test('listing ids never repeat across markets (a reused id would glue businesses in different cities)', async () => {
+    const austin = new Set((await all(new FakeDirectoryProvider())).map((x) => x.sourceRecordId));
+    const lahore = await all(new FakeDirectoryProvider(), { location: { country: 'PK', region: 'Punjab', city: 'Lahore' }, industry: 'plumbing' });
+    assert.ok(lahore.length > 0);
+    assert.ok(lahore.every((x) => !austin.has(x.sourceRecordId)));
+  });
+
   test('rejects uncovered countries', async () => {
     await assert.rejects(new FakeLeadProvider().searchCompanies({ ...input, location: { country: 'ZZ' } }, o()), (e) => e instanceof ProviderCallError && e.kind === 'INVALID_REQUEST');
   });

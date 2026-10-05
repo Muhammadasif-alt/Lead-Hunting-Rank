@@ -108,7 +108,7 @@ export async function advanceMission(deps: DiscoveryEngineDeps, missionId: strin
           next = await engine.resolve(mission);
           break;
         case 'ASSESSING_COVERAGE':
-          await engine.assess(mission);
+          next = await engine.assess(mission);
           break;
       }
       if (next === 'stop') break;
@@ -232,9 +232,12 @@ class MissionEngine {
 
     const round = mission.currentRound + 1;
     const pageLimit = DISCOVERY_MODES[mode].pageLimit;
+    const plannedAt = this.now().getTime();
     const ok = await this.transition(mission, 'PLANNING', { status: 'DISCOVERING', currentRound: round }, async (tx) => {
       await tx.discoveryQuery.createMany({
-        data: planned.map(({ strategy, source }) => ({
+        data: planned.map(({ strategy, source }, i) => ({
+          // Distinct timestamps keep the planned order (main category first) — discover runs queries by createdAt.
+          createdAt: new Date(plannedAt + i),
           workspaceId: mission.workspaceId,
           missionId: mission.id,
           round,
@@ -260,7 +263,7 @@ class MissionEngine {
     let mission: Mission | null = start;
     const location = locationOf(start.market);
 
-    for (;;) {
+    queries: for (;;) {
       const query: DiscoveryQuery | null = await this.db.discoveryQuery.findFirst({
         where: { missionId: start.id, round: start.currentRound, status: { in: ['RUNNING', 'PLANNED'] } },
         orderBy: [{ status: 'desc' }, { createdAt: 'asc' }, { id: 'asc' }], // RUNNING (a resumed query) first
@@ -279,6 +282,10 @@ class MissionEngine {
       for (;;) {
         mission = await this.stillIn('DISCOVERING');
         if (!mission) return 'continue'; // paused/stopped/lease lost — the loop re-reads and stops
+
+        // Enough listings for the person's lead target: resolve them first. Unfinished queries stay RUNNING/PLANNED
+        // and continue from their cursor if duplicates leave the hunt short.
+        if (await this.targetCovered(mission)) break queries;
 
         if (pages >= query.pageLimit) {
           await this.finishQuery(query.id, { exhausted: false });
@@ -386,6 +393,13 @@ class MissionEngine {
     return ok ? 'continue' : 'stop';
   }
 
+  /** Businesses already counted plus listings waiting for resolution reach the lead target (an upper bound). */
+  private async targetCovered(mission: Mission): Promise<boolean> {
+    if (!mission.targetCount) return false;
+    const pending = await this.db.discoveryObservation.count({ where: { missionId: mission.id, status: 'PENDING' } });
+    return mission.uniqueCompanies + pending >= mission.targetCount;
+  }
+
   private finishQuery(id: string, data: { exhausted: boolean }) {
     return this.db.discoveryQuery.update({ where: { id }, data: { status: 'COMPLETED', exhausted: data.exhausted, completedAt: this.now() } });
   }
@@ -430,9 +444,17 @@ class MissionEngine {
   // ───────────────────────────── ASSESSING_COVERAGE ─────────────────────────────
 
   /** Measures the round (docs/04 §20): yield, duplicates, decision with reasons; continues or completes. */
-  async assess(mission: Mission): Promise<void> {
+  async assess(mission: Mission): Promise<Step> {
     const mode = mission.mode as DiscoveryMode;
     const stats = await missionStats(this.db, mission.id, mission.currentRound);
+
+    // Discovery paused early for the lead target but duplicates left it short: finish this round's queries first.
+    const unfinished = { missionId: mission.id, round: mission.currentRound, status: { in: ['PLANNED' as const, 'RUNNING' as const] } };
+    if (mission.targetCount && stats.counters.uniqueCompanies < mission.targetCount && (await this.db.discoveryQuery.count({ where: unfinished })) > 0) {
+      const ok = await this.transition(mission, 'ASSESSING_COVERAGE', { ...stats.counters, status: 'DISCOVERING' });
+      return ok ? 'continue' : 'stop';
+    }
+
     const sources = await discoverySources(this.db, mission.workspaceId);
     const strategies = buildStrategies(mission.market.industry, locationOf(mission.market), { mode, categories: mission.categories });
     // Strategies that were skipped for budget never ran — they don't count as tried.
@@ -451,6 +473,7 @@ class MissionEngine {
       maxProviderCalls: mission.maxProviderCalls,
       sourcesSearched: stats.counters.sourcesUsed.length,
       strategyTypesSearched: stats.strategyTypesSearched,
+      targetCount: mission.targetCount,
     });
     const round = mission.currentRound;
     const last = stats.rounds.at(-1);
@@ -496,6 +519,8 @@ class MissionEngine {
         });
         await recordEvent(tx, ctx, 'DiscoveryRoundCompleted', mission.id, { missionId: mission.id, round, newUnique: row.newUnique, cumulativeUnique: row.cumulativeUnique, decision: assessment.decision });
         if (!complete) return;
+        // Queries left unfinished when the target was reached never ran to the end — recorded as skipped, not tried.
+        await tx.discoveryQuery.updateMany({ where: unfinished, data: { status: 'SKIPPED', error: 'Lead target reached', completedAt: now } });
         await tx.market.update({ where: { id: mission.marketId }, data: { lastDiscoveryAt: now } });
         await writeAudit(tx, ctx, {
           action: 'discovery_mission.completed',
@@ -511,6 +536,7 @@ class MissionEngine {
         });
       },
     );
+    return 'stop'; // the next round (if any) runs from the DiscoveryRoundCompleted event
   }
 }
 

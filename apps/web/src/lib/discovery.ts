@@ -48,6 +48,8 @@ export interface MissionSummary {
   maxQueries: number;
   providerCalls: number;
   maxProviderCalls: number;
+  /** Lead target the person chose; null = no limit. */
+  targetCount: number | null;
   failedQueries: number;
   observationsCount: number;
   uniqueCompanies: number;

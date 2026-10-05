@@ -1,3 +1,4 @@
+import { MAX_LEAD_TARGET } from '@revenue-os/shared';
 import { z } from 'zod';
 
 /** Request contracts for the Lead Hunter API (docs/17 §46-51, docs/screens/03). Commands are strict: unknown fields are rejected. */
@@ -12,6 +13,8 @@ const country = z
   .regex(/^[A-Za-z]{2}$/, 'Use a 2-letter country code, e.g. US')
   .transform((c) => c.toUpperCase());
 const categories = z.array(text(80).min(1)).max(30);
+/** How many unique businesses the person wants; omitted/null = as deep as the mode allows. */
+const targetCount = z.number().int().min(1).max(MAX_LEAD_TARGET).nullable().optional();
 
 /** Preview: everything optional — a typed request fills the gaps; missing industry/country is reported, not guessed. */
 export const PreviewMissionInput = z.strictObject({
@@ -34,6 +37,7 @@ export const StartMissionInput = z.strictObject({
   city: optionalText(120),
   mode,
   categories: categories.optional(),
+  targetCount,
 });
 export type StartMissionInput = z.output<typeof StartMissionInput>;
 

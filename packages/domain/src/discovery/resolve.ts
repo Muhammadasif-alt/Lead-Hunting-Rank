@@ -76,6 +76,10 @@ export async function resolveObservationTx(tx: Tx, ctx: ServiceContext, observat
   });
   if (mapping) {
     company = await canonical(tx, ctx.workspaceId, mapping.entityId);
+    // A listing id is only trusted while it still describes the same place — a source that reuses ids (or a
+    // business that moved) goes through normal matching instead of being glued to a company elsewhere.
+    const differs = (a: string | null | undefined, b: string | null | undefined) => !!a && !!b && a.trim().toLowerCase() !== b.trim().toLowerCase();
+    if (company && (differs(company.country, n.country) || differs(company.city, n.city))) company = null;
     if (company) matchConfidence = 'HIGH';
   }
 
