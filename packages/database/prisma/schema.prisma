@@ -55,6 +55,9 @@ enum EntityType {
   OPPORTUNITY_HYPOTHESIS
   AGENT_TASK
   AI_DECISION
+  SUPPRESSION
+  APPROVAL_REQUEST
+  POLICY_DECISION
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -73,6 +76,13 @@ model Workspace {
   currency        String          @default("USD") @db.Char(3)
   language        String          @default("en")
   status          WorkspaceStatus @default(ACTIVE)
+  /// Kill switch (docs/10 §93-102): PAUSED and EMERGENCY_STOP stop every outbound action; inbound and research continue.
+  outboundState     OutboundState @default(ACTIVE)
+  outboundReason    String?
+  outboundChangedAt DateTime?     @db.Timestamptz(3)
+  outboundChangedBy String?       @db.Uuid
+  /// Workspace preset (docs/10 §20-30). An agent may be set lower, never higher than this.
+  autonomyLevel     AutonomyLevel @default(L1)
   createdAt       DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
   archivedAt      DateTime?       @db.Timestamptz(3)
@@ -123,6 +133,9 @@ model Workspace {
   aiRuns                 AiRun[]
   aiDecisions            AiDecision[]
   companyAssessments     CompanyAssessment[]
+  suppressions           Suppression[]
+  policyDecisions        PolicyDecision[]
+  approvalRequests       ApprovalRequest[]
 }
 
 enum UserStatus {
@@ -789,7 +802,8 @@ enum PolicyStatus {
 }
 
 /**
- * Skeleton only — evaluation is Phase 10. Seeded with the hard safety rules so they exist from day one.
+ * Hard safety rules (read-only) and the workspace's configurable rules ("Workspace rules", one PolicyRule per setting,
+ * versioned by `version`). Evaluated by @revenue-os/policy.
  */
 model Policy {
   id             String       @id @default(uuid()) @db.Uuid
@@ -948,6 +962,12 @@ model ExternalAction {
   approvalRequestId String?              @db.Uuid
   provider          String
   providerAccountId String?
+  /// Who asked for it — policy is re-evaluated for this actor right before execution (docs/10 §5-6).
+  requestedByType   ActorType            @default(SYSTEM)
+  requestedById     String?
+  requestedByAgent  String?
+  /// WAITING actions with a resume time are re-queued by the policy sweep and revalidated.
+  resumeAt          DateTime?            @db.Timestamptz(3)
   /// What will be sent, frozen at prepare time. A changed payload needs a new action (and a new approval).
   payload           Json                 @default("{}")
   payloadHash       String               @default("")
@@ -970,6 +990,7 @@ model ExternalAction {
   @@unique([workspaceId, idempotencyKey])
   @@index([workspaceId, status])
   @@index([status, claimedAt])
+  @@index([status, resumeAt])
 }
 
 enum InboundEventStatus {
@@ -1731,6 +1752,8 @@ model AgentDefinition {
   /// Cost per UTC day in minor units; null = unlimited. Unknown costs count as zero but are labelled unknown.
   dailyCostLimitMinor Int?
   riskClass           String    @default("LOW")
+  /// null = the workspace level. A value above the workspace level is capped by the Policy Engine.
+  autonomyLevel       AutonomyLevel?
   createdAt           DateTime  @default(now()) @db.Timestamptz(3)
   updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
 
@@ -1955,4 +1978,170 @@ model CompanyAssessment {
   company   Company   @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
 
   @@index([workspaceId, companyId, dimension, supersededAt])
+}
+
+// ───────────────────────────── Policy Engine (Phase 10) ─────────────────────────────
+
+enum OutboundState {
+  ACTIVE
+  PAUSED
+  EMERGENCY_STOP
+}
+
+/// docs/10 §20-30: L0 manual · L1 assisted · L2 semi-autonomous · L3 autonomous · L4 goal-driven.
+enum AutonomyLevel {
+  L0
+  L1
+  L2
+  L3
+  L4
+}
+
+enum PolicyOutcome {
+  ACT
+  ASK
+  WAIT
+  BLOCK
+}
+
+enum PolicyStage {
+  PREPARE
+  APPROVAL
+  EXECUTION
+}
+
+enum SuppressionScope {
+  EMAIL
+  PHONE
+  PERSON
+  COMPANY
+  DOMAIN
+}
+
+enum SuppressionReason {
+  UNSUBSCRIBED
+  DO_NOT_CONTACT
+  COMPLAINT
+  LEGAL
+  MANUAL
+  INVALID_CONTACT
+  BOUNCE_POLICY
+}
+
+enum SuppressionStatus {
+  ACTIVE
+  LIFTED
+}
+
+/**
+ * Do-not-contact list (docs/10 §37-47). Suppression always wins — over campaigns, autonomy and approvals. Lifting is
+ * allowed only for reasons a person chose (manual, do-not-contact, invalid, bounce); an unsubscribe, complaint or legal
+ * hold stays. One ACTIVE row per scope + value (partial unique index in the migration). Rows are never deleted.
+ */
+model Suppression {
+  id            String            @id @default(uuid()) @db.Uuid
+  workspaceId   String            @db.Uuid
+  scope         SuppressionScope
+  /// Normalized: lower-case email/domain, digits-only phone, or the person/company id.
+  value         String
+  reason        SuppressionReason
+  status        SuppressionStatus @default(ACTIVE)
+  note          String?
+  source        String            @default("MANUAL")
+  createdByType ActorType
+  createdById   String?
+  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
+  liftedAt      DateTime?         @db.Timestamptz(3)
+  liftedById    String?           @db.Uuid
+  liftReason    String?
+  version       Int               @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, scope, value, status])
+  @@index([workspaceId, status, createdAt])
+}
+
+/**
+ * One Policy Engine evaluation (docs/10 §32-34, §110-118): the outcome, machine-readable reasons, which rules matched,
+ * the policy version, and the normalized input — so the simulator can replay it against a draft policy.
+ */
+model PolicyDecision {
+  id               String        @id @default(uuid()) @db.Uuid
+  workspaceId      String        @db.Uuid
+  stage            PolicyStage
+  actionType       String
+  actionClass      ActionClass
+  actorType        ActorType
+  actorId          String?
+  agentType        String?
+  entityType       EntityType
+  entityId         String        @db.Uuid
+  externalActionId String?       @db.Uuid
+  decision         PolicyOutcome
+  reasonCodes      String[]
+  reasonSummary    String
+  matchedRules     String[]
+  policyVersion    Int
+  riskLevel        RiskLevel
+  resumeAt         DateTime?     @db.Timestamptz(3)
+  /// Material fields of the action; an approval is valid only for the same fingerprint.
+  fingerprint      String
+  /// Hash of the evaluated context — a different hash later means the situation changed.
+  contextHash      String
+  input            Json
+  evaluatedAt      DateTime      @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, evaluatedAt])
+  @@index([workspaceId, externalActionId])
+  @@index([workspaceId, decision, evaluatedAt])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  INVALIDATED
+  CANCELLED
+}
+
+/**
+ * A human decision the Policy Engine asked for (docs/10 §76-92). Bound to the action's fingerprint and an expiry: a
+ * changed payload invalidates it, an old one expires, and execution still revalidates everything (approval ≠ execution).
+ * The first terminal decision wins (conditional update).
+ */
+model ApprovalRequest {
+  id                 String         @id @default(uuid()) @db.Uuid
+  workspaceId        String         @db.Uuid
+  externalActionId   String         @db.Uuid
+  policyDecisionId   String?        @db.Uuid
+  actionType         String
+  entityType         EntityType
+  entityId           String         @db.Uuid
+  requestedByType    ActorType
+  requestedById      String?
+  requestedByAgent   String?
+  payloadSnapshot    Json
+  fingerprint        String
+  riskLevel          RiskLevel
+  reasonCodes        String[]
+  reason             String
+  requiredPermission String
+  status             ApprovalStatus @default(PENDING)
+  expiresAt          DateTime       @db.Timestamptz(3)
+  decidedById        String?        @db.Uuid
+  decidedAt          DateTime?      @db.Timestamptz(3)
+  decisionNote       String?
+  createdAt          DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime       @updatedAt @db.Timestamptz(3)
+  version            Int            @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status, createdAt])
+  @@index([workspaceId, externalActionId])
+  @@index([status, expiresAt])
 }

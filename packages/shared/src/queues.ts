@@ -41,6 +41,8 @@ export const JOBS = {
   researchRun: 'research.company.run',
   /** Run the company's AI agents (research plan, website interpretation, contact route, assessment). Payload: AiCompanyJobData. */
   aiCompanyIntelligence: 'ai.company.intelligence',
+  /** Periodic: expire old approvals; re-queue WAITING actions whose time has come (execution revalidates each one). */
+  policySweep: 'policy.sweep',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];

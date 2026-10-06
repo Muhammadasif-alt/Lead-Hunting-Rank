@@ -65,6 +65,20 @@ export interface EventPayloads {
   CompanyAssessed: { companyId: string; agentTaskId: string; priority: string };
   /** A person turned an agent on/off or changed its daily limit. */
   AgentDefinitionUpdated: { agentType: string; changedFields: string[] };
+  // policy (docs/10, docs/17 §62-66) — decisions are rows (PolicyDecision); these record the state changes
+  /** Kill switch: ACTIVE ↔ PAUSED ↔ EMERGENCY_STOP. */
+  OutboundStateChanged: { from: string; to: string; reason: string | null };
+  /** Autonomy level or a configurable rule changed; `version` is the new policy version. */
+  PolicyUpdated: { version: number; changedFields: string[] };
+  SuppressionAdded: { suppressionId: string; scope: string; reason: string; cancelledActions: number };
+  SuppressionLifted: { suppressionId: string; scope: string; reason: string };
+  /** The Policy Engine said ASK: a person must approve this exact action before it can run. */
+  ApprovalRequested: { approvalId: string; externalActionId: string; actionType: string; reasonCodes: string[]; expiresAt: string };
+  ApprovalGranted: { approvalId: string; externalActionId: string; outcome: string };
+  ApprovalRejected: { approvalId: string; externalActionId: string };
+  ApprovalExpired: { approvalId: string; externalActionId: string };
+  /** The action changed after the approval was asked for, so the approval no longer applies. */
+  ApprovalInvalidated: { approvalId: string; externalActionId: string; reason: string };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -122,7 +136,9 @@ export type AggregateType =
   | 'WEBSITE'
   | 'RESEARCH_RUN'
   | 'OPPORTUNITY_HYPOTHESIS'
-  | 'AGENT_TASK';
+  | 'AGENT_TASK'
+  | 'SUPPRESSION'
+  | 'APPROVAL_REQUEST';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -149,7 +165,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -252,6 +268,15 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   AgentTaskBlocked: entity('ai', 'AGENT_TASK', 'An agent task could not run (disabled, budget, no model, tool not allowed)'),
   CompanyAssessed: entity('ai', 'COMPANY', 'The Scoring Agent assessed a company (levels with reasons)'),
   AgentDefinitionUpdated: entity('ai', 'WORKSPACE', 'An agent was turned on/off or its daily limit changed'),
+  OutboundStateChanged: entity('policy', 'WORKSPACE', 'Outbound was paused, emergency-stopped or resumed (kill switch)'),
+  PolicyUpdated: entity('policy', 'WORKSPACE', 'The autonomy level or a configurable rule changed (new policy version)'),
+  SuppressionAdded: entity('policy', 'SUPPRESSION', 'A contact, domain, person or company was put on the do-not-contact list'),
+  SuppressionLifted: entity('policy', 'SUPPRESSION', 'A person lifted a liftable suppression (history kept)'),
+  ApprovalRequested: entity('policy', 'APPROVAL_REQUEST', 'The Policy Engine asked a person to approve an action'),
+  ApprovalGranted: entity('policy', 'APPROVAL_REQUEST', 'A person approved an action; it was revalidated'),
+  ApprovalRejected: entity('policy', 'APPROVAL_REQUEST', 'A person rejected an action; it was cancelled'),
+  ApprovalExpired: entity('policy', 'APPROVAL_REQUEST', 'Nobody decided in time; the action was cancelled'),
+  ApprovalInvalidated: entity('policy', 'APPROVAL_REQUEST', 'The action changed after approval was asked; the approval no longer applies'),
   ContactPointVerified: entity('research', 'CONTACT_POINT', 'A verification provider checked an email (VALID/INVALID/RISKY/CATCH_ALL/UNKNOWN)', 'low'),
   EvidenceRecorded: entity('evidence', 'EVIDENCE', 'Evidence from a source was stored'),
   FactRecorded: entity('evidence', 'FACT', 'A fact was created or confirmed by new evidence'),

@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { X } from "lucide-react";
 import { Sidebar, SidebarNav } from "./Sidebar";
+import { OutboundBanner } from "./OutboundBanner";
 import { Topbar } from "./Topbar";
 import { screenForPath } from "@/lib/screens";
 
@@ -45,6 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div data-tone={tone} className="relative flex min-w-0 flex-1 flex-col">
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0.5 bg-linear-to-r from-tone via-tone/50 to-transparent" />
         <Topbar onOpenMenu={() => setMenuOpen(true)} />
+        <OutboundBanner />
         <main className="flex-1 px-4 py-6 sm:px-5 sm:py-8">
           {/* Content starts right next to the sidebar (no centring gap) and stops at the 1440px page width. */}
           <div className="w-full max-w-page">{children}</div>

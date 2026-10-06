@@ -20,6 +20,7 @@ import {
 import { ApiError, api, errorMessage, patch, post } from "@/lib/api";
 import { FRESHNESS, STATUS_LABEL, formatAgo, formatDate, formatPhone, location, type Overview } from "@/lib/crm";
 import { AiAssessment } from "./ai";
+import { DoNotContact } from "./dnc";
 import { Contactability, DigitalPresenceTab, Hypotheses, ResearchControl } from "./research";
 import { ActivityTab, ContactList, EvidenceTab, IntelligenceTab, PeopleTab, Section } from "./sections";
 
@@ -63,7 +64,7 @@ export function Company360({ id }: { id: string }) {
     void load();
   }, [load]);
 
-  // While research runs in the worker, refresh until it settles (SSE arrives in Phase 20).
+  // While research runs in the worker, refresh until it settles (SSE arrives in Phase 21).
   const researching = (data?.research.active || data?.ai.running) ?? false;
   useEffect(() => {
     if (!researching) return;
@@ -328,7 +329,7 @@ function Header({ data, onChange }: { data: Overview; onChange: () => Promise<vo
           }
         />
         <OpportunityBlock data={data} />
-        <ScoreBlock label="Intent" pending="Signals in Phase 15" />
+        <ScoreBlock label="Intent" pending="Signals in Phase 16" />
         <div className="card p-4">
           <div className="text-xs text-muted">Data quality</div>
           <div className="mt-1 flex flex-wrap items-center gap-2">
@@ -441,6 +442,7 @@ function OverviewTab({ data, onChange }: { data: Overview; onChange: () => Promi
         </Section>
       </div>
       <div className="space-y-6">
+        <DoNotContact companyId={data.company.id} />
         <AiAssessment data={data} onChange={onChange} />
         <Contactability data={data} />
         {data.hypotheses.some((h) => h.status === "ACTIVE") && <Hypotheses data={data} compact />}

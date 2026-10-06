@@ -1,5 +1,12 @@
 # @revenue-os/policy
 
-Deterministic Policy Engine: ACT / ASK / WAIT / BLOCK, RBAC/authority checks, suppression, kill switch.
+Deterministic Policy Engine (Phase 10, docs/10 + docs/17 §62-66). AI proposes; this decides: **ACT / ASK / WAIT / BLOCK**.
 
-Empty until **Phase 10 (Policy Engine)** — see `docs/10-tech-spec-6-policy-permission.md` and `docs/PROGRESS.md`.
+- `evaluate(request, context)` — pure, no I/O, no LLM. Precedence: default deny → workspace → kill switch → suppression →
+  permission / agent authority → pause → autonomy + approval → send window, daily limit, cool-down, provider.
+- `requestExternalAction` — the one way to ask for a side effect: prepare → decide → queue / approval / wait / block.
+- `createPolicyRevalidator` — the worker decides again right before every provider call.
+- `decideApproval`, `policySweep`, `setOutboundState`, `updatePolicy`, `addSuppression`, `liftSuppression`, `simulatePolicy`.
+
+`pnpm --filter @revenue-os/policy test` runs the engine tests (Definition of Done cases); the database cases live in
+`apps/api/src/modules/policy/phase10.policy.integration.test.ts`.

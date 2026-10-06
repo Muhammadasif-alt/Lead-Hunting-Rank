@@ -3,7 +3,7 @@ import { ValidationError } from '@revenue-os/shared';
 import { z } from 'zod';
 import type { ProviderGateway } from '../gateway/gateway.js';
 
-/** ExternalAction type for one outbound email. Campaigns (Phase 10) and replies (Phase 11) prepare these. */
+/** ExternalAction type for one outbound email. Campaigns (Phase 11) and replies (Phase 12) request these through the Policy Engine. */
 export const EMAIL_SEND_ACTION = 'email.send';
 
 /** The frozen payload of an email.send action. */

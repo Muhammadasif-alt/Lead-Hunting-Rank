@@ -161,7 +161,7 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     connection: 'OAUTH',
     fake: false,
     status: 'PLANNED',
-    plannedPhase: 10,
+    plannedPhase: 11,
     description: 'Send and sync email from your own mailbox, with minimum OAuth scopes.',
   },
   {
@@ -173,7 +173,7 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     connection: 'OAUTH',
     fake: false,
     status: 'PLANNED',
-    plannedPhase: 13,
+    plannedPhase: 14,
     description: 'Real availability and provider-confirmed bookings.',
   },
   {
@@ -185,7 +185,7 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     connection: 'API_KEY',
     fake: false,
     status: 'PLANNED',
-    plannedPhase: 14,
+    plannedPhase: 15,
     description: 'Private bucket for knowledge documents, snapshots and exports.',
   },
 ];

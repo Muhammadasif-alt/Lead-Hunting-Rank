@@ -15,7 +15,7 @@ function greeting() {
 }
 
 /**
- * Until the subsystems it aggregates exist (Phase 19), the Command Center shows only real things:
+ * Until the subsystems it aggregates exist (Phase 20), the Command Center shows only real things:
  * live system health, build progress and what unlocks next. No placeholder metrics.
  */
 export function CommandCenter() {

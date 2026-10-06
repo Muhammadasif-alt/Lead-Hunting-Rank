@@ -82,7 +82,7 @@ describe('Phase 5 — provider gateway + integrations', () => {
     assert.equal(JSON.stringify(integration).includes('credentialRef'), false, 'no credential fields leave the API');
 
     await assert.rejects(service.connect(ctx, 'fake_email', {}), (e) => e instanceof ConflictError && e.code === 'ALREADY_EXISTS');
-    await assert.rejects(service.connect(ctx, 'gmail', {}), (e) => e instanceof ValidationError && /Phase 10/.test(e.message));
+    await assert.rejects(service.connect(ctx, 'gmail', {}), (e) => e instanceof ValidationError && /Phase 11/.test(e.message));
     await assert.rejects(service.connect(ctx, 'nope', {}), NotFoundError);
   });
 

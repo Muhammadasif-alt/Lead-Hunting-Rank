@@ -17,6 +17,7 @@ import { payloadHash, recordEvent, type EventSource, type Tx } from './writer.js
  * ExternalAction lifecycle (docs/07 §101, docs/11 §18-29):
  *
  *   PREPARED → (WAITING_APPROVAL → APPROVED →) QUEUED → EXECUTING → SUCCEEDED
+ *   PREPARED / APPROVED → WAITING            the Policy Engine said WAIT (send window, daily limit, outbound paused)
  *                                                         ├→ QUEUED           provider definitely refused (429/503) — retry
  *                                                         ├→ UNKNOWN_OUTCOME  timeout / connection lost mid-call — reconcile
  *                                                         ├→ WAITING          e.g. provider needs re-auth
@@ -26,9 +27,9 @@ import { payloadHash, recordEvent, type EventSource, type Tx } from './writer.js
  * SUCCEEDED is final for its idempotency key; a database trigger enforces that too.
  */
 export const EXTERNAL_ACTION_TRANSITIONS: Record<ExternalActionStatus, readonly ExternalActionStatus[]> = {
-  PREPARED: ['WAITING_APPROVAL', 'APPROVED', 'QUEUED', 'BLOCKED', 'CANCELLED'],
+  PREPARED: ['WAITING_APPROVAL', 'APPROVED', 'QUEUED', 'WAITING', 'BLOCKED', 'CANCELLED'],
   WAITING_APPROVAL: ['APPROVED', 'BLOCKED', 'CANCELLED'],
-  APPROVED: ['QUEUED', 'BLOCKED', 'CANCELLED'],
+  APPROVED: ['QUEUED', 'WAITING', 'BLOCKED', 'CANCELLED'],
   QUEUED: ['EXECUTING', 'WAITING', 'BLOCKED', 'CANCELLED', 'FAILED'],
   EXECUTING: ['SUCCEEDED', 'QUEUED', 'UNKNOWN_OUTCOME', 'WAITING', 'BLOCKED', 'CANCELLED', 'FAILED'],
   WAITING: ['QUEUED', 'BLOCKED', 'CANCELLED'],
@@ -63,11 +64,12 @@ export interface ActionExecutor {
   reconcile?(action: ExternalActionView): Promise<ReconcileResult>;
 }
 
-export type Revalidation = { ok: true } | { ok: false; status: 'BLOCKED' | 'CANCELLED' | 'WAITING'; reason: string };
+/** `resumeAt` (WAITING only) lets the policy sweep re-queue the action later; it is revalidated again then. */
+export type Revalidation = { ok: true } | { ok: false; status: 'BLOCKED' | 'CANCELLED' | 'WAITING'; reason: string; resumeAt?: Date | null };
 
 /**
- * Current-state check immediately before the side effect (docs/07 §16-17). Phase 4 checks the workspace is
- * active; the Policy Engine, suppression and kill switch plug in here in Phase 10.
+ * Current-state check immediately before the side effect (docs/07 §16-17). The default only checks the workspace is
+ * active; the worker plugs in the Policy Engine (suppression, kill switch, authority, approvals — Phase 10).
  */
 export type Revalidator = (action: ExternalActionView, db: PrismaClient) => Promise<Revalidation>;
 
@@ -87,6 +89,8 @@ export interface PrepareInput {
   /** One logical side effect = one key, e.g. campaign:{id}:enrollment:{id}:step:{id}:message:{id} (docs/11 §21). */
   idempotencyKey: string;
   payload: Record<string, unknown>;
+  /** The AI agent asking, when the source actor is AI_AGENT — policy checks that agent's authority at execution. */
+  requestedByAgent?: string;
 }
 
 /**
@@ -110,6 +114,9 @@ export async function prepareExternalAction(tx: Tx, source: EventSource & { work
         idempotencyKey: input.idempotencyKey,
         payload: input.payload as Prisma.InputJsonValue,
         payloadHash: hash,
+        requestedByType: source.actor.type,
+        requestedById: source.actor.id,
+        requestedByAgent: input.requestedByAgent ?? null,
       },
     ],
     skipDuplicates: true,
@@ -242,7 +249,7 @@ export async function executeExternalAction(
   const check = await (deps.revalidate ?? workspaceActiveRevalidator)(view, db);
   if (!check.ok) {
     await db.$transaction(async (tx) => {
-      await transition(tx, action, ['EXECUTING'], check.status, { statusReason: check.reason });
+      await transition(tx, action, ['EXECUTING'], check.status, { statusReason: check.reason, resumeAt: check.status === 'WAITING' ? (check.resumeAt ?? null) : null });
       const type = check.status === 'BLOCKED' ? 'ExternalActionBlocked' : check.status === 'CANCELLED' ? 'ExternalActionCancelled' : 'ExternalActionWaiting';
       await recordEvent(tx, source, type, action.id, { ...base, reason: check.reason });
     });

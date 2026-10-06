@@ -17,7 +17,10 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 7 | Lead Hunter — Market Exhaust | ✅ done 2026-10-05 |
 | 8 | Research + Intelligence | ✅ done 2026-10-05 |
 | 9 | AI Runtime + Agents | ✅ done 2026-10-06 |
-| 10 … 24 | Policy → Campaigns → Inbox → … → Autonomy rollout | ⬜ |
+| 10 | Policy Engine | ✅ done 2026-10-06 |
+| 11 … 24 | Campaigns → Inbox → … → Production + autonomy rollout | ⬜ |
+
+Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy Engine, §67-76 Phase 11 Campaigns, … §147-155 Phase 24). The short list in docs/17 §1 has no separate policy phase, so its later numbers are one lower.
 
 ## Phase 0 — Definition of Done
 - [x] Monorepo: `apps/web`, `apps/api`, `apps/worker`, `packages/*`, one pnpm workspace + lockfile
@@ -140,10 +143,23 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - [x] AI evaluation harness (`pnpm --filter @revenue-os/ai eval`, test model in CI, Claude by hand): synthetic companies incl. a page that tries to instruct the AI and a failed-verification email; red-team answers (made-up evidence, certainty, planted email, INVALID route, inflated contactability) are rejected
 - [x] Screens: Company 360 — AI assessment card (levels + reasons, test-model label, "How the AI got here": decision, prompt version, model, tokens, validators), AI reading of the website, AI suggestions apart from rule hypotheses, suggested first contact; AI Control Center — agents with tools, today's runs/tokens/cost, on/off and daily run limit (policy.manage), latest decisions, later-phase controls shown honestly
 - [x] Tests: ai package (evaluation + red team + prompts + least privilege), Anthropic adapter (mocked fetch), API integration (four agents end to end, idempotent re-run, no model / disabled / budget → BLOCKED with a decision, rejected answer stored as REJECTED, missing tool → POLICY_BLOCK, prompt registry refuses silent edits)
-- Deferred by plan: policy engine ACT/ASK/WAIT/BLOCK on AI decisions, kill switch, approvals (Phase 10); AI Lead Hunter interpreter; shadow/canary agent versions (Phase 24); AI cost budgets per mission/goal (Phase 18); per-workspace API keys (server key only for now)
+- Deferred by plan: policy engine ACT/ASK/WAIT/BLOCK on AI decisions, kill switch, approvals (Phase 10); AI Lead Hunter interpreter; shadow/canary agent versions (Phase 24); AI cost budgets per mission/goal (Phase 19); per-workspace API keys (server key only for now)
 - After pulling: `pnpm install`, `pnpm db:deploy`; for real AI set `LLM_PROVIDER=anthropic` and `LLM_API_KEY=...` in `.env`, restart, then connect "Anthropic Claude" in Integrations
+
+## Phase 10 — Definition of Done
+- [x] Schema: Suppression (scope EMAIL/DOMAIN/PHONE/PERSON/COMPANY, reason, ACTIVE/LIFTED; one active row per scope+value via partial unique index; DELETE blocked by trigger), PolicyDecision (append-only: outcome, reason codes, matched rules, policy version, risk, resume time, fingerprint, context hash, full input for replay), ApprovalRequest (frozen payload, fingerprint, expiry, first decision wins); Workspace kill switch (ACTIVE/PAUSED/EMERGENCY_STOP + reason/by/at) and autonomy preset L0–L4; AgentDefinition autonomy (may only lower); ExternalAction requester (type/id/agent) + resumeAt
+- [x] `packages/policy`: pure deterministic `evaluate()` in the docs/10 precedence — default deny for unknown actions → workspace → kill switch → suppression / invalid contact → permission (humans) or agent authority (AI; a human's permission never transfers) → pause → autonomy + first-touch approval + approval fingerprint/expiry → send window, daily limit, contact cool-down, provider availability (WAIT with resume time); BLOCK beats ASK beats WAIT; no LLM
+- [x] Context builder reads suppression, kill switch, permissions and approvals fresh for every decision (never cached); targets = recipient emails, their domains, the people and companies behind them
+- [x] Gate: `requestExternalAction` (prepare → decide → queue / approval / wait / block, one transaction, idempotent); execution revalidator in the worker (decided again right before the provider call; anything but ACT stops it; an evaluation failure waits and never sends); `decideApproval` (people only, revalidates on approval, stale/expired → cancelled); `policySweep` job every minute (expires approvals, re-queues due WAITING actions only while outbound is on — each revalidated)
+- [x] Controls: kill switch with per-transition permission (pause: outbound.pause; emergency stop: outbound.emergency_stop; resume after a stop: owner only), reason required; autonomy + configurable rules (first-touch approval, sending hours/days, daily limit, cool-down, approval validity) versioned with audit; add suppression cancels pending outbound to that target in the same transaction; unsubscribes/complaints/legal holds can't be lifted
+- [x] Policy Simulator: fixed scenarios from docs/10 §126-138 + replay of recent real decisions, current vs draft, read-only
+- [x] API: `GET/PATCH /policy`, `GET/POST /policy/outbound`, `POST /policy/simulate`, `GET /policy/approvals`, `POST /policy/approvals/:id/approve|reject`, `GET/POST /policy/suppressions`, `POST /policy/suppressions/:id/lift`; the client never submits a decision
+- [x] Screens: AI Control Center → Safety & policy (kill switch, autonomy levels, outbound rules with simulator preview, hard rules, every decision with "Why?"), Approvals (exact message, reasons, approve/reject with note), Agents; red/amber kill-switch banner on every screen; Settings → do-not-contact list (add, search, lift with reason); Company 360 → Do not contact
+- [x] DoD tests (engine unit + DB integration): suppressed contact cannot send (incl. a suppression racing a queued action); kill switch cannot send (emergency stop blocks queued, pause waits and resumes one by one); unauthorized AI cannot send (no authority → BLOCK, low autonomy → ASK, disabled agent, lowered autonomy re-checked at execution, AI can't approve); stale approval cannot send (edited before/after approval, expired, rejected, double decision); policy failure cannot default allow (unknown action, evaluation error at execution)
+- Deferred by plan: campaign/conversation/market scope rules and frequency caps per company (Phase 11–12 with campaigns), pricing/discount/claim policies (Phase 12–13), budgets per mission/goal (Phase 19), approvals in the Human Attention inbox + SLAs (Phase 21), incident-driven autonomy reduction and shadow mode (Phase 24), natural-language policy editing
+- After pulling: `pnpm install`, `pnpm db:deploy`
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.
-- `packages/policy` khaali hai — Phase 10 mein bharega.
+- Local dev needs RAM: Docker (Postgres + Redis) crashes when the machine runs out of memory — close heavy apps/tabs before `pnpm dev`. The worker now waits for the database instead of crashing.
 - Dev seed adds new permissions to existing workspaces — after pulling a phase that adds permissions, run `pnpm db:seed` again.

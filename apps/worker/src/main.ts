@@ -1,7 +1,7 @@
 import { hostname } from 'node:os';
 import { loadConfig } from '@revenue-os/config';
 import { createPrismaClient } from '@revenue-os/database';
-import { PROMPTS, runCompanyIntelligence, syncPrompts } from '@revenue-os/ai';
+import { PromptChangedError, PROMPTS, runCompanyIntelligence, syncPrompts } from '@revenue-os/ai';
 import { advanceMission, failMission, failResearch, runResearchJob, sweepDiscoveryMissions } from '@revenue-os/domain';
 import type { ActionExecutor } from '@revenue-os/events';
 import {
@@ -16,6 +16,7 @@ import {
   type JobHandler,
 } from '@revenue-os/events/runtime';
 import { FAKE_SEND_ACTION, FakeSideEffectProvider, RedisFakeProviderStore } from '@revenue-os/events/testing';
+import { createPolicyRevalidator, policySweep } from '@revenue-os/policy';
 import { createEmailSendExecutor, EMAIL_SEND_ACTION } from '@revenue-os/providers';
 import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
 import {
@@ -62,7 +63,14 @@ const executors: Record<string, ActionExecutor> = {
 if (config.APP_ENV !== 'production') {
   executors[FAKE_SEND_ACTION] = new FakeSideEffectProvider(new RedisFakeProviderStore(connection, prefix), 150);
 }
-const actions = externalActionHandlers(db, { executors });
+// Policy Engine (Phase 10): right before every provider call the action is decided again on current truth — kill switch,
+// suppression, the requester's permission/autonomy, the approval. Anything but ACT stops the call.
+const actions = externalActionHandlers(db, { executors, revalidate: createPolicyRevalidator() });
+
+const policySweepJob: JobHandler = {
+  timeoutMs: 60_000,
+  handle: async () => policySweep(db),
+};
 
 const providerHealthCheck: JobHandler = {
   timeoutMs: 120_000,
@@ -143,6 +151,7 @@ const workers = [
       [JOBS.externalActionReconcile]: actions[JOBS.externalActionReconcile],
       [JOBS.providerHealthCheck]: providerHealthCheck,
       [JOBS.discoverySweep]: discoverySweep,
+      [JOBS.policySweep]: policySweepJob,
     },
   }),
   createQueueWorker({
@@ -189,7 +198,17 @@ const workers = [
 
 // Prompt registry: record each prompt version's exact text; an edited prompt without a version bump stops the worker
 // (docs/08 §68 — no silent production prompt changes).
-await syncPrompts(db, PROMPTS);
+// A database that is still starting (or recovering after a crash) is waited for instead of crashing the worker.
+for (let attempt = 1; ; attempt++) {
+  try {
+    await syncPrompts(db, PROMPTS);
+    break;
+  } catch (err) {
+    if (err instanceof PromptChangedError || attempt >= 30) throw err;
+    logger.warn({ attempt, error: err instanceof Error ? err.message.split('\n')[0] : String(err) }, 'database not ready, retrying');
+    await new Promise((r) => setTimeout(r, 2_000));
+  }
+}
 
 // Redis reconnects every few seconds while down — log each distinct error once, not on every retry.
 for (const worker of workers) {
@@ -222,6 +241,11 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('discovery-sweep', { every: 60_000 }, { name: JOBS.discoverySweep, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register discovery sweep schedule'));
+// Policy: expires undecided approvals and re-queues WAITING actions whose time has come (each is revalidated).
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('policy-sweep', { every: 60_000 }, { name: JOBS.policySweep, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register policy sweep schedule'));
 
 let shuttingDown = false;
 async function shutdown(signal: string) {

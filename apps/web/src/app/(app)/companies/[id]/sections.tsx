@@ -445,7 +445,7 @@ export function IntelligenceTab({ data, onChange }: { data: Overview; onChange: 
           <Wrench className="mt-0.5 size-4 shrink-0 text-faint" />
           <div>
             <div className="font-medium">Signals</div>
-            <p className="text-xs text-muted">Hiring, expansion and website changes arrive with Signals in Phase 15.</p>
+            <p className="text-xs text-muted">Hiring, expansion and website changes arrive with Signals in Phase 16.</p>
           </div>
         </div>
         <div className="card flex items-start gap-3 p-4 text-sm">

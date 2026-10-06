@@ -12,8 +12,8 @@ const startOfDay = () => {
 
 /**
  * AI agents for the AI Control Center (Phase 9 slice of screen #17): what each agent may do, what it spent today, and
- * its latest decisions. Turning an agent off or capping its runs is audited; autonomy levels and the kill switch
- * arrive with the Policy Engine (Phase 10).
+ * its latest decisions. Turning an agent off or capping its runs is audited; autonomy, the kill switch and approvals
+ * live in the Policy Engine (PolicyService).
  */
 @Injectable()
 export class AiService {

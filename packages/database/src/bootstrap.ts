@@ -29,7 +29,7 @@ const DEFAULT_PIPELINE_STAGES = [
   { name: 'Lost', stageType: 'LOST' },
 ] as const;
 
-/** Hard safety rules (docs/10 §35-36). Stored now so they exist from day one; evaluated from Phase 10. */
+/** Hard safety rules (docs/10 §35-36). Shown read-only; enforced in code by @revenue-os/policy. */
 const HARD_RULES = [
   { ruleType: 'NO_SEND_TO_SUPPRESSED', description: 'Never contact an actively suppressed email, phone, person, company or domain.' },
   { ruleType: 'NO_CROSS_WORKSPACE_ACCESS', description: 'No actor may read or change another workspace’s data.' },
