@@ -3,6 +3,7 @@ import type { Company, CompanyStatus, ContactPoint, Evidence, Prisma } from '@re
 import { assessContactability, freshnessOf, normalizeCompanyName, NotFoundError, roleRelevance, type PermissionKey } from '@revenue-os/shared';
 import { PrismaService } from '../../infra/prisma.service.js';
 import { OPEN_CANDIDATE } from './entity-resolution.service.js';
+import { AGENTS } from '@revenue-os/ai';
 import { presentRun } from './research.service.js';
 
 export interface CompanyListQuery {
@@ -153,7 +154,7 @@ export class CompanyQueryService {
     const company = await db.company.findFirst({ where: { id, workspaceId }, include: { aliases: { orderBy: { createdAt: 'asc' } } } });
     if (!company) throw new NotFoundError(`company ${id} not found`);
 
-    const [mergedInto, mergedFrom, employments, companyPoints, facts, evidence, mappings, candidates, creator, runs, website, technologies, social, hypotheses] = await Promise.all([
+    const [mergedInto, mergedFrom, employments, companyPoints, facts, evidence, mappings, candidates, creator, runs, website, technologies, social, hypotheses, assessments, agentTasks] = await Promise.all([
       company.mergedIntoId ? db.company.findUnique({ where: { id: company.mergedIntoId }, select: { id: true, displayName: true } }) : null,
       db.company.findMany({ where: { workspaceId, mergedIntoId: id }, select: { id: true, displayName: true, mergedAt: true }, orderBy: { mergedAt: 'desc' } }),
       db.employment.findMany({ where: { workspaceId, companyId: id }, include: { person: true }, orderBy: [{ isCurrent: 'desc' }, { createdAt: 'asc' }] }),
@@ -182,6 +183,13 @@ export class CompanyQueryService {
         where: { workspaceId, companyId: id },
         include: { evidence: { include: { evidence: true } } },
         orderBy: [{ status: 'asc' }, { confidence: 'desc' }, { generatedAt: 'desc' }],
+      }),
+      db.companyAssessment.findMany({ where: { workspaceId, companyId: id, supersededAt: null } }),
+      db.agentTask.findMany({
+        where: { workspaceId, entityType: 'COMPANY', entityId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 40,
+        include: { decisions: { orderBy: { createdAt: 'desc' }, take: 1 }, runs: { orderBy: { startedAt: 'desc' }, take: 1 } },
       }),
     ]);
 
@@ -365,6 +373,37 @@ export class CompanyQueryService {
         evidence: h.evidence.map((he) => presentEvidence(he.evidence, now)).sort((a, b) => +b.observedAt - +a.observedAt),
       })),
       contactability: { ...contactability, decisionMakers },
+      // AI agents (Phase 9): their latest task each, with the decision record ("why?") — proposals, never facts.
+      ai: {
+        assessment: ['PRIORITY', 'OPPORTUNITY', 'CONTACTABILITY', 'DATA_CONFIDENCE', 'ICP_FIT'].flatMap((dimension) => {
+          const a = assessments.find((x) => x.dimension === dimension);
+          return a ? [{ dimension, level: a.level, reasons: a.reasons, evidenceIds: a.evidenceIds, assessedAt: a.assessedAt, agentTaskId: a.agentTaskId }] : [];
+        }),
+        running: agentTasks.some((t) => ['PENDING', 'QUEUED', 'RUNNING', 'WAITING_TOOL'].includes(t.status) && Date.now() - t.createdAt.getTime() < 15 * 60_000),
+        agents: (Object.keys(AGENTS) as (keyof typeof AGENTS)[]).flatMap((type) => {
+          const t = agentTasks.find((x) => x.agentType === type && x.status !== 'CANCELLED') ?? agentTasks.find((x) => x.agentType === type);
+          if (!t) return [];
+          const d = t.decisions[0];
+          const run = t.runs[0];
+          return [
+            {
+              agentType: type,
+              label: AGENTS[type].label,
+              taskId: t.id,
+              status: t.status,
+              reasonSummary: t.reasonSummary,
+              output: t.output,
+              uncertainties: t.uncertainties,
+              failureCategory: t.failureCategory,
+              completedAt: t.completedAt,
+              decision: d
+                ? { decision: d.decision, actionType: d.actionType, confidence: d.confidence, risk: d.risk, reasonSummary: d.reasonSummary, evidenceRefs: d.evidenceRefs, promptVersion: d.promptVersion, model: d.model, validation: d.validation, createdAt: d.createdAt }
+                : null,
+              run: run ? { provider: run.provider, model: run.model, status: run.status, inputTokens: run.inputTokens, outputTokens: run.outputTokens, costMinor: run.costMinor, latencyMs: run.latencyMs } : null,
+            },
+          ];
+        }),
+      },
       duplicates: candidates.map((c) => {
         const other = others.find((o) => o.id === (c.leftId === id ? c.rightId : c.leftId));
         return {
@@ -401,6 +440,7 @@ export class CompanyQueryService {
         resolveDuplicates: active && can('company.merge'),
         findDuplicates: active && can('company.update'),
         research: active && can('company.research'),
+        assess: active && can('company.research'),
       },
     };
   }

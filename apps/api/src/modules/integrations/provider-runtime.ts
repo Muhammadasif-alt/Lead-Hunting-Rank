@@ -18,6 +18,7 @@ export const providerRuntimeProvider: FactoryProvider<ProviderRuntime> = {
       storagePath: config.STORAGE_LOCAL_PATH,
       redis: queues.redis,
       prefix: queues.prefix,
+      llm: { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY },
       logger: { warn: (obj, msg) => logger.warn(obj, msg) },
     }),
 };

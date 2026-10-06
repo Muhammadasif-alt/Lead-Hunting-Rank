@@ -1,5 +1,9 @@
 # @revenue-os/ai
 
-AI runtime: AI Gateway, agent definitions, prompt registry, context builder, typed tools, structured-output validation.
+AI runtime (Phase 9, docs/08 + docs/17 §58-61): agent registry and typed tools, prompt registry, context builder,
+AI gateway, deterministic validators, and the company agents (Research, Website Audit, Contact, Scoring).
 
-Empty until **Phase 9 (AI Runtime + Agents)** — see `docs/08-tech-spec-4-agent-architecture.md` and `docs/PROGRESS.md`.
+Agents only read and propose — no external messages, meetings, pricing or strategy changes.
+
+- `pnpm --filter @revenue-os/ai test` — evaluation harness + red-team checks with the test model
+- `pnpm --filter @revenue-os/ai eval` — the same harness; uses Claude when `LLM_PROVIDER=anthropic` and `LLM_API_KEY` are set

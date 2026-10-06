@@ -53,6 +53,8 @@ enum EntityType {
   WEBSITE
   RESEARCH_RUN
   OPPORTUNITY_HYPOTHESIS
+  AGENT_TASK
+  AI_DECISION
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -116,6 +118,11 @@ model Workspace {
   hypotheses             OpportunityHypothesis[]
   hypothesisEvidence     HypothesisEvidence[]
   researchRuns           ResearchRun[]
+  agentDefinitions       AgentDefinition[]
+  agentTasks             AgentTask[]
+  aiRuns                 AiRun[]
+  aiDecisions            AiDecision[]
+  companyAssessments     CompanyAssessment[]
 }
 
 enum UserStatus {
@@ -380,6 +387,7 @@ model Company {
   social       SocialProfile[]
   hypotheses   OpportunityHypothesis[]
   researchRuns ResearchRun[]
+  assessments  CompanyAssessment[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, normalizedName])
@@ -1693,4 +1701,258 @@ model HypothesisEvidence {
 
   @@id([hypothesisId, evidenceId])
   @@index([workspaceId, evidenceId])
+}
+
+// ───────────────────────────── AI runtime & agents (Phase 9) ─────────────────────────────
+
+enum AgentType {
+  RESEARCH
+  WEB_AUDIT
+  CONTACT
+  SCORING
+}
+
+/**
+ * One agent's configuration in a workspace (docs/08 §12-13): which version runs, its model class, what it may use and
+ * how much it may spend. The tool allowlist is enforced server-side, never by the prompt.
+ */
+model AgentDefinition {
+  id                  String    @id @default(uuid()) @db.Uuid
+  workspaceId         String    @db.Uuid
+  agentType           AgentType
+  version             Int
+  enabled             Boolean   @default(true)
+  modelClass          String
+  allowedTools        String[]
+  maxConcurrency      Int       @default(4)
+  timeoutMs           Int       @default(60000)
+  /// Runs per UTC day; null = unlimited.
+  dailyRunLimit       Int?
+  /// Cost per UTC day in minor units; null = unlimited. Unknown costs count as zero but are labelled unknown.
+  dailyCostLimitMinor Int?
+  riskClass           String    @default("LOW")
+  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, agentType])
+}
+
+enum PromptStatus {
+  DRAFT
+  ACTIVE
+  RETIRED
+}
+
+/**
+ * Prompt registry (docs/08 §64-68). Prompts live in code with a version; this table records exactly which text each
+ * version had (checksum), so a decision can name its prompt and a silent edit without a version bump is refused.
+ */
+model PromptDefinition {
+  id            String       @id @default(uuid()) @db.Uuid
+  agentType     AgentType
+  taskType      String
+  version       Int
+  status        PromptStatus @default(ACTIVE)
+  system        String
+  template      String
+  schemaName    String
+  schemaVersion Int
+  checksum      String
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+
+  @@unique([agentType, taskType, version])
+}
+
+/// docs/09 §83-87. PARTIAL keeps useful output with named gaps; BLOCKED = budget, disabled agent or no model.
+enum AgentTaskStatus {
+  PENDING
+  QUEUED
+  RUNNING
+  WAITING_TOOL
+  WAITING_HUMAN
+  COMPLETED
+  PARTIAL
+  BLOCKED
+  FAILED
+  CANCELLED
+}
+
+enum AiFailureCategory {
+  MODEL_FAILURE
+  TOOL_FAILURE
+  PROVIDER_FAILURE
+  VALIDATION_FAILURE
+  POLICY_BLOCK
+  BUDGET_BLOCK
+  MISSING_CONTEXT
+  TIMEOUT
+  UNKNOWN
+}
+
+/**
+ * What one agent was asked to do about one entity (docs/08 §60-63). Not a giant essay: refs in, structured out.
+ */
+model AgentTask {
+  id              String             @id @default(uuid()) @db.Uuid
+  workspaceId     String             @db.Uuid
+  agentType       AgentType
+  taskType        String
+  status          AgentTaskStatus    @default(PENDING)
+  priority        Int                @default(4)
+  entityType      EntityType
+  entityId        String             @db.Uuid
+  objective       String
+  /// Deduplication: the same agent never runs the same task twice on the same input (e.g. one research run).
+  inputKey        String
+  inputRefs       Json               @default("{}")
+  output          Json?
+  confidence      ConfidenceLevel?
+  uncertainties   String[]
+  reasonSummary   String?
+  failureCategory AiFailureCategory?
+  error           String?
+  attempts        Int                @default(0)
+  researchRunId   String?            @db.Uuid
+  startedAt       DateTime?          @db.Timestamptz(3)
+  completedAt     DateTime?          @db.Timestamptz(3)
+  createdAt       DateTime           @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime           @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  runs      AiRun[]
+  decisions AiDecision[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, agentType, taskType, inputKey])
+  @@index([workspaceId, entityType, entityId, createdAt])
+  @@index([workspaceId, agentType, createdAt])
+}
+
+enum AiRunStatus {
+  SUCCEEDED
+  FAILED
+  /// The model answered but validators rejected the answer.
+  REJECTED
+}
+
+/**
+ * One model call (docs/08 §60-63: AIRun ≠ AgentTask) — model, prompt version, tokens, cost, latency. No chain of thought.
+ */
+model AiRun {
+  id              String             @id @default(uuid()) @db.Uuid
+  workspaceId     String             @db.Uuid
+  agentTaskId     String             @db.Uuid
+  agentType       AgentType
+  provider        String?
+  model           String?
+  modelClass      String
+  promptVersion   Int
+  toolsetVersion  Int
+  schemaName      String
+  status          AiRunStatus
+  inputHash       String
+  inputTokens     Int?
+  outputTokens    Int?
+  /// Minor units; null = unknown (never invented).
+  costMinor       Int?
+  costIsEstimate  Boolean            @default(true)
+  latencyMs       Int?
+  output          Json?
+  error           String?
+  failureCategory AiFailureCategory?
+  startedAt       DateTime           @db.Timestamptz(3)
+  completedAt     DateTime?          @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  task      AgentTask @relation(fields: [workspaceId, agentTaskId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, startedAt])
+  @@index([workspaceId, agentType, startedAt])
+}
+
+enum AiDecisionKind {
+  PROPOSE
+  ACT
+  ASK
+  WAIT
+  BLOCK
+  ESCALATE
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+/**
+ * "Why did the AI do this?" (docs/08 §99-101): a concise operational reason with evidence, prompt version and model —
+ * plus what the deterministic validators said. Append-only.
+ */
+model AiDecision {
+  id            String           @id @default(uuid()) @db.Uuid
+  workspaceId   String           @db.Uuid
+  agentTaskId   String           @db.Uuid
+  aiRunId       String?          @db.Uuid
+  agentType     AgentType
+  actionType    String
+  entityType    EntityType
+  entityId      String           @db.Uuid
+  decision      AiDecisionKind
+  confidence    ConfidenceLevel?
+  risk          RiskLevel        @default(LOW)
+  reasonSummary String
+  evidenceRefs  String[]
+  promptVersion Int?
+  model         String?
+  /// [{ validator, ok, detail }]
+  validation    Json             @default("[]")
+  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  task      AgentTask @relation(fields: [workspaceId, agentTaskId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([workspaceId, entityType, entityId, createdAt])
+}
+
+enum AssessmentDimension {
+  ICP_FIT
+  OPPORTUNITY
+  CONTACTABILITY
+  DATA_CONFIDENCE
+  PRIORITY
+}
+
+enum AssessmentLevel {
+  HIGH
+  MEDIUM
+  LOW
+  UNKNOWN
+}
+
+/**
+ * Scoring Agent output (docs/08 §31-32): a level with reasons per dimension, not "Score = 87". History kept — the
+ * current row has supersededAt = null.
+ */
+model CompanyAssessment {
+  id           String              @id @default(uuid()) @db.Uuid
+  workspaceId  String              @db.Uuid
+  companyId    String              @db.Uuid
+  dimension    AssessmentDimension
+  level        AssessmentLevel
+  reasons      String[]
+  evidenceIds  String[]
+  agentTaskId  String?             @db.Uuid
+  aiDecisionId String?             @db.Uuid
+  assessedAt   DateTime            @db.Timestamptz(3)
+  supersededAt DateTime?           @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company   @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@index([workspaceId, companyId, dimension, supersededAt])
 }

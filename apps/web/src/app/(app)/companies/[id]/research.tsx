@@ -11,10 +11,12 @@ import {
   Lightbulb,
   Loader,
   ShieldAlert,
+  Sparkles,
   UserRound,
 } from "lucide-react";
 import { errorMessage, post } from "@/lib/api";
 import { formatAgo, formatDate, type Overview, type ResearchRunStatus } from "@/lib/crm";
+import { AiWebsiteReading } from "./ai";
 import { Section } from "./sections";
 
 const RUN_STATUS: Record<ResearchRunStatus, { label: string; className: string }> = {
@@ -116,7 +118,8 @@ export function ResearchControl({ data, onChange }: { data: Overview; onChange: 
 /** Opportunity hypotheses — clearly not facts: hedged, with their evidence, and marked when no longer supported. */
 export function Hypotheses({ data, compact = false }: { data: Overview; compact?: boolean }) {
   const active = data.hypotheses.filter((h) => h.status === "ACTIVE" || h.status === "SUPPORTED");
-  const old = data.hypotheses.filter((h) => !(h.status === "ACTIVE" || h.status === "SUPPORTED"));
+  const suggested = data.hypotheses.filter((h) => h.status === "CANDIDATE");
+  const old = data.hypotheses.filter((h) => !["ACTIVE", "SUPPORTED", "CANDIDATE"].includes(h.status));
   const list = compact ? active.slice(0, 4) : active;
   return (
     <Section
@@ -171,6 +174,25 @@ export function Hypotheses({ data, compact = false }: { data: Overview; compact?
           ))}
         </ul>
       )}
+      {!compact && suggested.length > 0 && (
+        <div className="mt-4">
+          <div className="flex items-center gap-1.5 text-xs font-medium text-tone-ai">
+            <Sparkles className="size-3.5" /> AI suggestions — not verified
+          </div>
+          <ul className="mt-2 space-y-2">
+            {suggested.map((h) => (
+              <li key={h.id} className="rounded-lg border border-dashed border-line p-3 text-sm">
+                <div>{h.hypothesis}</div>
+                <div className="mt-0.5 text-xs text-muted">Why: {h.reasonSummary}</div>
+                <div className="mt-1 text-xs text-faint">
+                  {h.confidence.toLowerCase()} confidence · cites {h.evidence.length} evidence item
+                  {h.evidence.length === 1 ? "" : "s"}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {compact && active.length > list.length && (
         <p className="mt-2 text-xs text-faint">+{active.length - list.length} more on the Digital presence tab</p>
       )}
@@ -193,6 +215,11 @@ export function Hypotheses({ data, compact = false }: { data: Overview; compact?
 /** Can we reach a relevant person? Reasons in words, never a bare score. */
 export function Contactability({ data }: { data: Overview }) {
   const c = data.contactability;
+  const route = (data.ai.agents.find((a) => a.agentType === "CONTACT" && a.status === "COMPLETED")?.output?.bestRoute ??
+    null) as {
+    type: string;
+    reason: string;
+  } | null;
   return (
     <Section title="Contactability" hint="Verified means the address exists — not that we may contact it.">
       <div className={`text-lg font-semibold ${LEVEL[c.level].className}`}>{LEVEL[c.level].label}</div>
@@ -201,6 +228,12 @@ export function Contactability({ data }: { data: Overview }) {
           <li key={r}>{r}</li>
         ))}
       </ul>
+      {route && route.type !== "NONE" && (
+        <div className="mt-3 rounded-lg bg-raised px-3 py-2 text-sm">
+          <span className="text-xs text-faint">Suggested first contact (Contact Agent)</span>
+          <div>{route.reason}</div>
+        </div>
+      )}
       {c.decisionMakers.length > 0 && (
         <div className="mt-4">
           <div className="text-xs text-faint">Possible decision makers</div>
@@ -298,6 +331,7 @@ export function DigitalPresenceTab({ data }: { data: Overview }) {
             </>
           )}
         </Section>
+        <AiWebsiteReading data={data} />
         <Hypotheses data={data} />
       </div>
 

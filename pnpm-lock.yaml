@@ -184,6 +184,9 @@ importers:
       '@nestjs/platform-express':
         specifier: ^12.1.2
         version: 12.1.2(@nestjs/common@12.1.2(reflect-metadata@0.2.2)(rxjs@7.8.2))(@nestjs/core@12.1.2)
+      '@revenue-os/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@revenue-os/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -279,6 +282,9 @@ importers:
 
   apps/worker:
     dependencies:
+      '@revenue-os/ai':
+        specifier: workspace:*
+        version: link:../../packages/ai
       '@revenue-os/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -310,6 +316,34 @@ importers:
       tsc-watch:
         specifier: ^7
         version: 7.2.1(typescript@5.9.3)
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/ai:
+    dependencies:
+      '@revenue-os/database':
+        specifier: workspace:*
+        version: link:../database
+      '@revenue-os/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@revenue-os/events':
+        specifier: workspace:*
+        version: link:../events
+      '@revenue-os/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@revenue-os/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.19.1
       typescript:
         specifier: ~5.9.3
         version: 5.9.3

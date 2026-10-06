@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { ApiError, api, errorMessage, patch, post } from "@/lib/api";
 import { FRESHNESS, STATUS_LABEL, formatAgo, formatDate, formatPhone, location, type Overview } from "@/lib/crm";
+import { AiAssessment } from "./ai";
 import { Contactability, DigitalPresenceTab, Hypotheses, ResearchControl } from "./research";
 import { ActivityTab, ContactList, EvidenceTab, IntelligenceTab, PeopleTab, Section } from "./sections";
 
@@ -63,7 +64,7 @@ export function Company360({ id }: { id: string }) {
   }, [load]);
 
   // While research runs in the worker, refresh until it settles (SSE arrives in Phase 20).
-  const researching = data?.research.active ?? false;
+  const researching = (data?.research.active || data?.ai.running) ?? false;
   useEffect(() => {
     if (!researching) return;
     const timer = setInterval(() => void load(), 3000);
@@ -320,7 +321,12 @@ function Header({ data, onChange }: { data: Overview; onChange: () => Promise<vo
 
       {/* Score blocks: only Data quality is real in Phase 6 — the AI scores arrive with their phases, never faked. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <ScoreBlock label="ICP fit" pending="Scored in Phase 9" />
+        <ScoreBlock
+          label="ICP fit"
+          pending={
+            data.ai.assessment.find((x) => x.dimension === "ICP_FIT")?.reasons[0] ?? "Needs an ideal customer profile"
+          }
+        />
         <OpportunityBlock data={data} />
         <ScoreBlock label="Intent" pending="Signals in Phase 15" />
         <div className="card p-4">
@@ -349,19 +355,24 @@ function Header({ data, onChange }: { data: Overview; onChange: () => Promise<vo
   );
 }
 
-/** Not a score: how many evidence-backed hypotheses there are, and how sure the strongest one is. */
+/** Not a score: the Scoring Agent's level (when assessed) and how many evidence-backed hypotheses stand behind it. */
 function OpportunityBlock({ data }: { data: Overview }) {
   const active = data.hypotheses.filter((h) => h.status === "ACTIVE" || h.status === "SUPPORTED");
   const strongest = ["HIGH", "MEDIUM", "LOW"].find((c) => active.some((h) => h.confidence === c));
+  const assessed = data.ai.assessment.find((x) => x.dimension === "OPPORTUNITY");
   return (
     <div className="card p-4">
       <div className="text-xs text-muted">Opportunity</div>
-      <div className={`mt-1 text-lg font-semibold ${active.length ? "" : "text-faint"}`}>
-        {active.length ? `${active.length} hypothes${active.length === 1 ? "is" : "es"}` : "None yet"}
+      <div className={`mt-1 text-lg font-semibold ${active.length || assessed ? "" : "text-faint"}`}>
+        {assessed && assessed.level !== "UNKNOWN"
+          ? `${assessed.level.charAt(0)}${assessed.level.slice(1).toLowerCase()}`
+          : active.length
+            ? `${active.length} hypothes${active.length === 1 ? "is" : "es"}`
+            : "None yet"}
       </div>
       <div className="mt-0.5 text-xs text-faint">
         {active.length
-          ? `strongest: ${strongest?.toLowerCase()} confidence · not verified`
+          ? `${assessed ? `${active.length} hypothes${active.length === 1 ? "is" : "es"} · ` : ""}strongest: ${strongest?.toLowerCase()} confidence · not verified`
           : data.research.latestRun
             ? "nothing observed suggests a need"
             : "research to find out"}
@@ -430,6 +441,7 @@ function OverviewTab({ data, onChange }: { data: Overview; onChange: () => Promi
         </Section>
       </div>
       <div className="space-y-6">
+        <AiAssessment data={data} onChange={onChange} />
         <Contactability data={data} />
         {data.hypotheses.some((h) => h.status === "ACTIVE") && <Hypotheses data={data} compact />}
         <Section title="Where the data came from">

@@ -1,6 +1,7 @@
 import { hostname } from 'node:os';
 import { loadConfig } from '@revenue-os/config';
 import { createPrismaClient } from '@revenue-os/database';
+import { PROMPTS, runCompanyIntelligence, syncPrompts } from '@revenue-os/ai';
 import { advanceMission, failMission, failResearch, runResearchJob, sweepDiscoveryMissions } from '@revenue-os/domain';
 import type { ActionExecutor } from '@revenue-os/events';
 import {
@@ -24,6 +25,7 @@ import {
   QUEUES,
   queuePrefix,
   type DiagnosticsPingResult,
+  type AiCompanyJobData,
   type DiscoveryAdvanceJobData,
   type ResearchRunJobData,
 } from '@revenue-os/shared';
@@ -48,6 +50,7 @@ const providers = createProviderRuntime(db, {
   storagePath: config.STORAGE_LOCAL_PATH,
   redis: connection,
   prefix,
+  llm: { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY },
   logger: { warn: (obj, msg) => logger.warn(obj, msg) },
 });
 
@@ -111,6 +114,12 @@ const researchRun: JobHandler = {
   },
 };
 
+// AI runtime (Phase 9): the company's agents after research or on request. Each agent's task is idempotent per input key.
+const aiCompanyIntelligence: JobHandler = {
+  timeoutMs: 8 * 60_000,
+  handle: async (data) => runCompanyIntelligence({ db, providers: providers.gateway }, data as unknown as AiCompanyJobData),
+};
+
 const ping: JobHandler = {
   timeoutMs: 5_000,
   handle: async (data): Promise<DiagnosticsPingResult> => ({
@@ -157,6 +166,16 @@ const workers = [
     handlers: { [JOBS.researchRun]: researchRun },
   }),
   createQueueWorker({
+    queue: QUEUES.ai,
+    prefix,
+    connection,
+    db,
+    logger,
+    metrics,
+    concurrency: 2,
+    handlers: { [JOBS.aiCompanyIntelligence]: aiCompanyIntelligence },
+  }),
+  createQueueWorker({
     queue: QUEUES.outbound,
     prefix,
     connection,
@@ -167,6 +186,10 @@ const workers = [
     handlers: { [JOBS.externalActionExecute]: actions[JOBS.externalActionExecute] },
   }),
 ];
+
+// Prompt registry: record each prompt version's exact text; an edited prompt without a version bump stops the worker
+// (docs/08 §68 — no silent production prompt changes).
+await syncPrompts(db, PROMPTS);
 
 // Redis reconnects every few seconds while down — log each distinct error once, not on every retry.
 for (const worker of workers) {

@@ -39,6 +39,8 @@ export const JOBS = {
   discoverySweep: 'discovery.sweep',
   /** Research one company: website, checks, contacts, verification, hypotheses. Payload: ResearchRunJobData. */
   researchRun: 'research.company.run',
+  /** Run the company's AI agents (research plan, website interpretation, contact route, assessment). Payload: AiCompanyJobData. */
+  aiCompanyIntelligence: 'ai.company.intelligence',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -93,5 +95,13 @@ export interface ResearchRunJobData extends JobTracing {
   runId?: string;
   trigger: 'DISCOVERY' | 'MANUAL';
   missionId?: string;
+  schemaVersion: 1;
+}
+
+export interface AiCompanyJobData extends JobTracing {
+  workspaceId: string;
+  companyId: string;
+  /** What this pass is about (a research run, a person's request); an agent never runs twice on the same key. */
+  inputKey: string;
   schemaVersion: 1;
 }

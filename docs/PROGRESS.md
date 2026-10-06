@@ -16,7 +16,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 6 | CRM Core — Company 360 | ✅ done 2026-10-04 |
 | 7 | Lead Hunter — Market Exhaust | ✅ done 2026-10-05 |
 | 8 | Research + Intelligence | ✅ done 2026-10-05 |
-| 9 … 24 | AI → Policy → Campaigns → Inbox → … → Autonomy rollout | ⬜ |
+| 9 | AI Runtime + Agents | ✅ done 2026-10-06 |
+| 10 … 24 | Policy → Campaigns → Inbox → … → Autonomy rollout | ⬜ |
 
 ## Phase 0 — Definition of Done
 - [x] Monorepo: `apps/web`, `apps/api`, `apps/worker`, `packages/*`, one pnpm workspace + lockfile
@@ -130,7 +131,19 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 - Deferred by plan: AI interpretation of pages and AI-written hypotheses (Phase 9 — must cite the same evidence), search-provider research beyond the official site and hiring/expansion signals (Phase 15), mission ENRICHING state (research runs per company, independent of the hunt), robots.txt and per-site crawl politeness beyond rate limits (Phase 22 hardening), snapshot bodies in object storage (only hash + extracted text kept)
 - After pulling: `pnpm install`, `pnpm db:deploy`, `pnpm db:seed` (new permission), then connect "Test website reader" and "Test email verifier" in Integrations
 
+## Phase 9 — Definition of Done
+- [x] Schema: AgentDefinition (per workspace: version, model class, allowed tools, daily run/cost limits, on/off), PromptDefinition (exact text + checksum per version), AgentTask (docs/09 states, unique per agent + task + input key), AiRun (model, prompt/toolset version, tokens, cost — null when unknown — latency, input hash; no chain of thought), AiDecision (decision PROPOSE/ACT/ASK/WAIT/BLOCK/ESCALATE, confidence, risk, reason, evidence, validator results), CompanyAssessment (level + reasons per dimension, history kept)
+- [x] `packages/ai`: agent registry + typed tools (READ / PROPOSAL / COMMAND, allowlist enforced server-side), prompt registry (versioned in code; an edited prompt under an old version stops the worker), context builder (least sufficient, workspace-scoped, every item with source/date/trust; website text fenced as untrusted), AI gateway (enabled? budget? model connected? → structured call through the Provider Gateway → validators → apply through tools → AiRun + AiDecision + event), deterministic validators (grounding, hedging, no invented contacts/links, known ids, contactability ceiling, priority consistency)
+- [x] Agents (read + propose only): Research (summary, gaps, next steps — recorded, not executed), Website Audit (interprets the deterministic checks, AI hypotheses as unverified CANDIDATE with evidence), Contact (role-fit ranking + best first route; never an INVALID email, never a guessed one), Scoring (opportunity / contactability / data confidence / priority with reasons; ICP fit UNKNOWN until an ICP exists)
+- [x] Flow: ResearchRunCompleted → AI job (queue `ai`) → four agents in order; failures contained per agent; rate limits retry the job and finished agents are skipped; "Assess again" (`POST /companies/:id/assess`, company.research)
+- [x] LLM providers: Anthropic Claude adapter (forced-tool structured output, schema re-validated, error taxonomy, tokens reported, cost unknown not guessed) connectable when the server has LLM_PROVIDER=anthropic + LLM_API_KEY; the test model answers with each agent's rule-based answer, checked by the same validators
+- [x] AI evaluation harness (`pnpm --filter @revenue-os/ai eval`, test model in CI, Claude by hand): synthetic companies incl. a page that tries to instruct the AI and a failed-verification email; red-team answers (made-up evidence, certainty, planted email, INVALID route, inflated contactability) are rejected
+- [x] Screens: Company 360 — AI assessment card (levels + reasons, test-model label, "How the AI got here": decision, prompt version, model, tokens, validators), AI reading of the website, AI suggestions apart from rule hypotheses, suggested first contact; AI Control Center — agents with tools, today's runs/tokens/cost, on/off and daily run limit (policy.manage), latest decisions, later-phase controls shown honestly
+- [x] Tests: ai package (evaluation + red team + prompts + least privilege), Anthropic adapter (mocked fetch), API integration (four agents end to end, idempotent re-run, no model / disabled / budget → BLOCKED with a decision, rejected answer stored as REJECTED, missing tool → POLICY_BLOCK, prompt registry refuses silent edits)
+- Deferred by plan: policy engine ACT/ASK/WAIT/BLOCK on AI decisions, kill switch, approvals (Phase 10); AI Lead Hunter interpreter; shadow/canary agent versions (Phase 24); AI cost budgets per mission/goal (Phase 18); per-workspace API keys (server key only for now)
+- After pulling: `pnpm install`, `pnpm db:deploy`; for real AI set `LLM_PROVIDER=anthropic` and `LLM_API_KEY=...` in `.env`, restart, then connect "Anthropic Claude" in Integrations
+
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.
-- `packages/policy`, `ai` khaali hain — apne phase mein bharenge.
+- `packages/policy` khaali hai — Phase 10 mein bharega.
 - Dev seed adds new permissions to existing workspaces — after pulling a phase that adds permissions, run `pnpm db:seed` again.

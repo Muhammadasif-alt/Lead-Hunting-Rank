@@ -1,0 +1,33 @@
+{
+  "name": "@revenue-os/ai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsc -p tsconfig.json && node --test \"dist/**/*.test.js\"",
+    "eval": "tsc -p tsconfig.json && node dist/eval/cli.js"
+  },
+  "dependencies": {
+    "@revenue-os/database": "workspace:*",
+    "@revenue-os/domain": "workspace:*",
+    "@revenue-os/events": "workspace:*",
+    "@revenue-os/providers": "workspace:*",
+    "@revenue-os/shared": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^24",
+    "typescript": "~5.9.3"
+  }
+}

@@ -142,6 +142,19 @@ export interface Overview {
     resolveDuplicates: boolean;
     findDuplicates: boolean;
     research: boolean;
+    assess: boolean;
+  };
+  ai: {
+    assessment: {
+      dimension: "PRIORITY" | "OPPORTUNITY" | "CONTACTABILITY" | "DATA_CONFIDENCE" | "ICP_FIT";
+      level: "HIGH" | "MEDIUM" | "LOW" | "UNKNOWN";
+      reasons: string[];
+      evidenceIds: string[];
+      assessedAt: string;
+      agentTaskId: string | null;
+    }[];
+    running: boolean;
+    agents: AgentSummary[];
   };
   research: {
     latestRun: ResearchRun | null;
@@ -227,6 +240,39 @@ export interface Overview {
       email: { value: string; status: ContactPoint["status"]; verification: string | null } | null;
     }[];
   };
+}
+
+export interface AgentSummary {
+  agentType: "RESEARCH" | "WEB_AUDIT" | "CONTACT" | "SCORING";
+  label: string;
+  taskId: string;
+  status: string;
+  reasonSummary: string | null;
+  output: Record<string, unknown> | null;
+  uncertainties: string[];
+  failureCategory: string | null;
+  completedAt: string | null;
+  decision: {
+    decision: string;
+    actionType: string;
+    confidence: Confidence | null;
+    risk: string;
+    reasonSummary: string;
+    evidenceRefs: string[];
+    promptVersion: number | null;
+    model: string | null;
+    validation: { validator: string; ok: boolean; detail: string }[];
+    createdAt: string;
+  } | null;
+  run: {
+    provider: string | null;
+    model: string | null;
+    status: string;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    costMinor: number | null;
+    latencyMs: number | null;
+  } | null;
 }
 
 export type ResearchRunStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "PARTIAL" | "WAITING" | "FAILED";

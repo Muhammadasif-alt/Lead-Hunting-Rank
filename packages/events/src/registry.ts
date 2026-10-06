@@ -57,6 +57,14 @@ export interface EventPayloads {
   OpportunityHypothesisProposed: { hypothesisId: string; companyId: string; key: string; confidence: string };
   OpportunityHypothesisInvalidated: { hypothesisId: string; companyId: string; key: string; reason: string };
   ContactPointVerified: { contactPointId: string; entityType: string; entityId: string; status: string; provider: string };
+  // AI runtime (docs/08, docs/17 §58-61) — agents only propose; these record what they did
+  CompanyIntelligenceRequested: { companyId: string; requestId: string };
+  AgentTaskCompleted: { agentTaskId: string; agentType: string; entityType: string; entityId: string; decision: string };
+  AgentTaskFailed: { agentTaskId: string; agentType: string; entityType: string; entityId: string; category: string; reason: string };
+  AgentTaskBlocked: { agentTaskId: string; agentType: string; entityType: string; entityId: string; category: string; reason: string };
+  CompanyAssessed: { companyId: string; agentTaskId: string; priority: string };
+  /** A person turned an agent on/off or changed its daily limit. */
+  AgentDefinitionUpdated: { agentType: string; changedFields: string[] };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -113,7 +121,8 @@ export type AggregateType =
   | 'DISCOVERY_MISSION'
   | 'WEBSITE'
   | 'RESEARCH_RUN'
-  | 'OPPORTUNITY_HYPOTHESIS';
+  | 'OPPORTUNITY_HYPOTHESIS'
+  | 'AGENT_TASK';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -140,7 +149,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -172,6 +181,15 @@ const researchCompany: EventRoute = {
   job: JOBS.researchRun,
   priority: PRIORITY.BACKGROUND,
   toJobData: (e) => ({ companyId: e.payload.companyId, missionId: e.payload.missionId, trigger: 'DISCOVERY', schemaVersion: 1 }),
+};
+
+/** The company's AI agents run after research; each agent skips work it already did for the same input key. */
+const companyIntelligence: EventRoute = {
+  consumer: 'ai.after-research',
+  queue: QUEUES.ai,
+  job: JOBS.aiCompanyIntelligence,
+  priority: PRIORITY.BACKGROUND,
+  toJobData: (e) => ({ companyId: e.payload.companyId, inputKey: `research:${e.aggregateId}`, schemaVersion: 1 }),
 };
 
 const entity = (owner: EventDefinition['owner'], aggregateType: AggregateType, description: string, pii: 'none' | 'low' = 'none'): EventDefinition => ({
@@ -220,11 +238,20 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
     routes: [{ ...researchCompany, consumer: 'research.run-requested', priority: PRIORITY.NORMAL, toJobData: (e) => ({ runId: e.aggregateId, companyId: e.payload.companyId, trigger: 'MANUAL', schemaVersion: 1 }) }],
   },
   ResearchRunStarted: entity('research', 'RESEARCH_RUN', 'Research of a company started'),
-  ResearchRunCompleted: entity('research', 'RESEARCH_RUN', 'Research finished (COMPLETED, or PARTIAL with named gaps)'),
+  ResearchRunCompleted: { ...entity('research', 'RESEARCH_RUN', 'Research finished (COMPLETED, or PARTIAL with named gaps)'), routes: [companyIntelligence] },
   ResearchRunFailed: entity('research', 'RESEARCH_RUN', 'Research of a company failed unrecoverably'),
   WebsiteAudited: entity('research', 'WEBSITE', 'Deterministic website checks were recorded'),
   OpportunityHypothesisProposed: entity('research', 'OPPORTUNITY_HYPOTHESIS', 'A possible need was proposed from observed facts (not verified)'),
   OpportunityHypothesisInvalidated: entity('research', 'OPPORTUNITY_HYPOTHESIS', 'A later observation no longer supports a hypothesis'),
+  CompanyIntelligenceRequested: {
+    ...entity('ai', 'COMPANY', 'A person asked the AI agents to assess a company again'),
+    routes: [{ ...companyIntelligence, consumer: 'ai.requested', priority: PRIORITY.NORMAL, toJobData: (e) => ({ companyId: e.aggregateId, inputKey: `request:${e.payload.requestId}`, schemaVersion: 1 }) }],
+  },
+  AgentTaskCompleted: entity('ai', 'AGENT_TASK', 'An agent finished a task; its answer passed the validators'),
+  AgentTaskFailed: entity('ai', 'AGENT_TASK', 'An agent task failed (model, provider or validation)'),
+  AgentTaskBlocked: entity('ai', 'AGENT_TASK', 'An agent task could not run (disabled, budget, no model, tool not allowed)'),
+  CompanyAssessed: entity('ai', 'COMPANY', 'The Scoring Agent assessed a company (levels with reasons)'),
+  AgentDefinitionUpdated: entity('ai', 'WORKSPACE', 'An agent was turned on/off or its daily limit changed'),
   ContactPointVerified: entity('research', 'CONTACT_POINT', 'A verification provider checked an email (VALID/INVALID/RISKY/CATCH_ALL/UNKNOWN)', 'low'),
   EvidenceRecorded: entity('evidence', 'EVIDENCE', 'Evidence from a source was stored'),
   FactRecorded: entity('evidence', 'FACT', 'A fact was created or confirmed by new evidence'),

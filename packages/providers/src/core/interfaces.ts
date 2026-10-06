@@ -223,6 +223,18 @@ export interface LlmRequest {
   maxOutputTokens?: number;
 }
 
+export interface StructuredLlmRequest<T> extends LlmRequest {
+  schema: OutputSchema<T>;
+  schemaName: string;
+  /** JSON Schema of the expected output, so a real model can be constrained to it (tool input schema). */
+  jsonSchema?: Record<string, unknown>;
+  /**
+   * Test models only: the deterministic answer this caller would accept, used by the fake model when nothing is
+   * scripted. Real providers ignore it. The answer is still schema-validated like any model output.
+   */
+  simulated?: () => unknown;
+}
+
 export interface LlmTextResult extends Usage {
   text: string;
   model: string;
@@ -242,7 +254,7 @@ export interface LlmStructuredResult<T> extends Omit<LlmTextResult, 'text'> {
 export interface LLMProvider extends ProviderAdapter {
   generateText(request: LlmRequest, options: CallOptions): Promise<LlmTextResult>;
   /** Output is validated against `schema`; invalid output is an error, never passed on (docs/12 §62). */
-  generateStructured<T>(request: LlmRequest & { schema: OutputSchema<T>; schemaName: string }, options: CallOptions): Promise<LlmStructuredResult<T>>;
+  generateStructured<T>(request: StructuredLlmRequest<T>, options: CallOptions): Promise<LlmStructuredResult<T>>;
 }
 
 // ───────────────────────────── storage / notifications ─────────────────────────────

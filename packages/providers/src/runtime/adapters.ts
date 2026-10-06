@@ -13,6 +13,7 @@ import { FakeVerificationProvider } from '../fakes/verification.js';
 import { FakeWebsiteProvider } from '../fakes/websites.js';
 import { ProviderGateway, type BindingResolver, type ProviderBinding } from '../gateway/gateway.js';
 import { MemoryProviderStateStore, RedisProviderStateStore } from '../gateway/state-store.js';
+import { AnthropicProvider } from '../llm/anthropic.js';
 import { LocalStorageProvider } from '../storage/local.js';
 import { HttpWebsiteFetcher } from '../web/fetcher.js';
 import { PrismaHealthSink, PrismaUsageSink } from './sinks.js';
@@ -30,6 +31,8 @@ export interface AdapterFactoryOptions {
   /** With Redis, the fake mailbox survives restarts and is shared by API and worker. */
   redis?: Redis;
   prefix?: string;
+  /** Server LLM configuration (LLM_PROVIDER / LLM_API_KEY). */
+  llm?: { provider: string; apiKey?: string };
 }
 
 /**
@@ -62,6 +65,8 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
         return new LocalStorageProvider(join(options.storagePath, integration.workspaceId));
       case 'web_fetcher':
         return new HttpWebsiteFetcher();
+      case 'anthropic':
+        return options.llm?.provider === 'anthropic' && options.llm.apiKey ? new AnthropicProvider({ apiKey: options.llm.apiKey }) : null;
       default:
         return shared[integration.provider as keyof typeof shared] ?? null;
     }
@@ -90,7 +95,7 @@ const DEFAULT_RATE_LIMITS: Record<string, ProviderBinding['rateLimit']> = {
 };
 
 /** The fetcher keeps its own per-page deadline (a slow site is a website fact); the gateway's must outlast it. */
-const DEFAULT_TIMEOUTS: Record<string, number> = { web_fetcher: 20_000 };
+const DEFAULT_TIMEOUTS: Record<string, number> = { web_fetcher: 20_000, anthropic: 120_000 };
 
 export function toBinding(integration: Pick<Integration, 'id' | 'workspaceId' | 'provider' | 'capabilities'>, factory: AdapterFactory): ProviderBinding | null {
   const adapter = factory.forIntegration(integration);

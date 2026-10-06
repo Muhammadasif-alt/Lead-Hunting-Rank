@@ -16,8 +16,11 @@ export interface ProviderDefinition {
   category: ProviderCategory;
   capabilities: Capability[];
   costModel: CostModel;
-  /** How a workspace connects it. Credentials (API key / OAuth) arrive with the first real adapter. */
-  connection: 'NONE' | 'API_KEY' | 'OAUTH';
+  /**
+   * How a workspace connects it. SERVER_KEY = uses a key configured on the server (e.g. LLM_API_KEY); per-workspace
+   * API keys and OAuth arrive with their vendors.
+   */
+  connection: 'NONE' | 'SERVER_KEY' | 'API_KEY' | 'OAUTH';
   fake: boolean;
   status: 'AVAILABLE' | 'PLANNED';
   plannedPhase?: number;
@@ -144,11 +147,10 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     category: 'AI',
     capabilities: ['LLM_REASONING', 'LLM_EXTRACTION'],
     costModel: 'PER_TOKEN',
-    connection: 'API_KEY',
+    connection: 'SERVER_KEY',
     fake: false,
-    status: 'PLANNED',
-    plannedPhase: 9,
-    description: 'Language model for research, classification and drafting, behind the AI gateway.',
+    status: 'AVAILABLE',
+    description: 'Claude for research, website and contact analysis, scoring and later drafting — behind the AI gateway. Uses the server key (LLM_PROVIDER=anthropic, LLM_API_KEY).',
   },
   {
     key: 'gmail',
@@ -192,7 +194,16 @@ export function providerDefinition(key: string): ProviderDefinition | undefined 
   return PROVIDER_CATALOG.find((p) => p.key === key);
 }
 
+/** Server-side keys that make SERVER_KEY providers connectable (never the key itself — only whether it is there). */
+export interface ServerKeys {
+  llmProvider?: string;
+  llmKeyConfigured?: boolean;
+}
+
 /** Providers a workspace may connect in this environment. Fakes never in production. */
-export function isConnectable(def: ProviderDefinition, appEnv: string): boolean {
-  return def.status === 'AVAILABLE' && def.connection === 'NONE' && !(def.fake && appEnv === 'production');
+export function isConnectable(def: ProviderDefinition, appEnv: string, keys: ServerKeys = {}): boolean {
+  if (def.status !== 'AVAILABLE' || (def.fake && appEnv === 'production')) return false;
+  if (def.connection === 'NONE') return true;
+  if (def.connection === 'SERVER_KEY') return def.category === 'AI' && keys.llmProvider === def.key && keys.llmKeyConfigured === true;
+  return false;
 }

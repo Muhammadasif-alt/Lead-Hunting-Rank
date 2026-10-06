@@ -107,6 +107,14 @@ export class CompaniesController {
     return this.research.request(this.access.serviceContext(access), id);
   }
 
+  /** Assess again: the AI agents re-run on current data (202; poll the overview). Proposals only — no external action. */
+  @Post(':id/assess')
+  @HttpCode(202)
+  @RequirePermission('company.research')
+  requestAssessment(@Param('id', Id) id: string, @CurrentAccess() access: Access) {
+    return this.research.requestAssessment(this.access.serviceContext(access), id);
+  }
+
   @Post(':id/people')
   @RequirePermission('company.update')
   addPerson(@Param('id', Id) id: string, @Body(new ZodValidationPipe(AddPersonInput)) input: z.output<typeof AddPersonInput>, @CurrentAccess() access: Access) {

@@ -14,4 +14,5 @@ export * from './fakes/llm.js';
 export * from './fakes/notification.js';
 export * from './storage/local.js';
 export * from './web/fetcher.js';
+export * from './llm/anthropic.js';
 export * from './executors/email-send.js';

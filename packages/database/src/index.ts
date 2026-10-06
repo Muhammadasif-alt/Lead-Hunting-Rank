@@ -4,7 +4,12 @@ import { PrismaClient } from './generated/prisma/client.js';
 export { PrismaClient };
 export { Prisma } from './generated/prisma/client.js';
 export type {
+  AgentDefinition,
+  AgentTask,
+  AiDecision,
+  AiRun,
   Company,
+  CompanyAssessment,
   CompanyAlias,
   CoverageAssessment,
   DiscoveryMission,

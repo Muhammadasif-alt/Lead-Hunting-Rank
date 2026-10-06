@@ -10,6 +10,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@revenue-os/ai": "workspace:*",
     "@revenue-os/config": "workspace:*",
     "@revenue-os/database": "workspace:*",
     "@revenue-os/domain": "workspace:*",

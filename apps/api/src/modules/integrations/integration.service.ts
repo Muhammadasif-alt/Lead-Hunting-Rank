@@ -47,7 +47,7 @@ export class IntegrationService {
   ) {}
 
   catalog() {
-    return PROVIDER_CATALOG.map((p) => ({ ...p, connectable: isConnectable(p, this.config.APP_ENV) }));
+    return PROVIDER_CATALOG.map((p) => ({ ...p, connectable: isConnectable(p, this.config.APP_ENV, this.serverKeys()) }));
   }
 
   async list(workspaceId: string) {
@@ -106,6 +106,10 @@ export class IntegrationService {
     };
   }
 
+  private serverKeys() {
+    return { llmProvider: this.config.LLM_PROVIDER, llmKeyConfigured: !!this.config.LLM_API_KEY };
+  }
+
   /**
    * Connects a provider that needs no credentials (fakes, local storage). Reconnecting a disconnected account restores
    * the same integration row and its history instead of creating a duplicate identity (docs/12 §120).
@@ -113,8 +117,15 @@ export class IntegrationService {
   async connect(ctx: ServiceContext, providerKey: string, input: { name?: string }) {
     const def = providerDefinition(providerKey);
     if (!def) throw new NotFoundError(`Unknown provider ${providerKey}`);
-    if (!isConnectable(def, this.config.APP_ENV)) {
-      const why = def.status === 'PLANNED' ? `arrives in Phase ${def.plannedPhase}` : def.fake ? 'test providers are disabled in production' : `needs ${def.connection} credentials`;
+    if (!isConnectable(def, this.config.APP_ENV, this.serverKeys())) {
+      const why =
+        def.status === 'PLANNED'
+          ? `arrives in Phase ${def.plannedPhase}`
+          : def.fake
+            ? 'test providers are disabled in production'
+            : def.connection === 'SERVER_KEY'
+              ? `the server needs LLM_PROVIDER=${def.key} and LLM_API_KEY`
+              : `needs ${def.connection} credentials`;
       throw new ValidationError(`${def.name} can't be connected here: ${why}`);
     }
     const integration = await this.prisma.client.$transaction(async (tx) => {

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { ScreenPlaceholder } from "@/components/app/ScreenPlaceholder";
+import { AiControl } from "./AiControl";
 
 export const metadata: Metadata = { title: "AI Control Center" };
 
 export default function Page() {
-  return <ScreenPlaceholder href="/ai-control" />;
+  return <AiControl />;
 }

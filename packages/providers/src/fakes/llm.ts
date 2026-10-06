@@ -1,10 +1,10 @@
 import { ProviderCallError } from '../core/errors.js';
-import type { CallOptions, CapabilityCheck, LlmRequest, LlmStructuredResult, LlmTextResult, LLMProvider, OutputSchema } from '../core/interfaces.js';
+import type { CallOptions, CapabilityCheck, LlmRequest, LlmStructuredResult, LlmTextResult, LLMProvider, StructuredLlmRequest } from '../core/interfaces.js';
 import { FailureQueue, type FakeFailure } from './failures.js';
 
 /**
- * Deterministic stand-in for a language model. Tests script answers with `respondWith`; otherwise it echoes a short
- * summary of the prompt. Structured output is validated against the caller's schema exactly as a real model's would
+ * Deterministic stand-in for a language model. Tests script answers with `respondWith`; structured calls otherwise use
+ * the caller's `simulated` answer (a rule-based stand-in), and text calls echo a short summary of the prompt. Structured output is validated against the caller's schema exactly as a real model's would
  * be — an answer that doesn't fit is an error, never passed on (docs/12 §62). Token counts are estimates (chars / 4).
  */
 export class FakeLLMProvider implements LLMProvider {
@@ -39,11 +39,12 @@ export class FakeLLMProvider implements LLMProvider {
     return this.result(request, text);
   }
 
-  async generateStructured<T>(request: LlmRequest & { schema: OutputSchema<T>; schemaName: string }, { signal }: CallOptions): Promise<LlmStructuredResult<T>> {
+  async generateStructured<T>(request: StructuredLlmRequest<T>, { signal }: CallOptions): Promise<LlmStructuredResult<T>> {
     await this.failures.before(signal);
     this.requests.push(request);
-    if (!this.scripted.length) throw new ProviderCallError('INVALID_REQUEST', `Fake model has no scripted answer for ${request.schemaName}`);
-    const answer = this.scripted.shift();
+    // Scripted answers first (tests); otherwise the caller's deterministic stand-in; never invented knowledge.
+    if (!this.scripted.length && !request.simulated) throw new ProviderCallError('INVALID_REQUEST', `Fake model has no scripted answer for ${request.schemaName}`);
+    const answer = this.scripted.length ? this.scripted.shift() : request.simulated!();
     let value: unknown = answer;
     if (typeof answer === 'string') {
       try {
