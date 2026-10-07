@@ -99,8 +99,10 @@ describe('Phase 4 — events, outbox and external actions', () => {
     await Promise.all([dispatchOutboxBatch(prisma.client, publish, { batchSize: 500 }), dispatchOutboxBatch(prisma.client, publish, { batchSize: 500 })]);
     while ((await dispatchOutboxBatch(prisma.client, publish, { batchSize: 500 })).claimed > 0);
 
-    const mine = published.filter((j) => j.data.externalActionId === id);
+    // Queued fans out to execution (once) and to campaign bookkeeping (Phase 11), each with its own job id.
+    const mine = published.filter((j) => j.data.externalActionId === id && j.name === JOBS.externalActionExecute);
     assert.equal(mine.length, 1);
+    assert.equal(published.filter((j) => j.data.externalActionId === id).length, 2);
     assert.equal(mine[0]!.queue, QUEUES.outbound);
     assert.equal(mine[0]!.name, JOBS.externalActionExecute);
     assert.match(mine[0]!.jobId, /^[0-9a-f-]+\.outbound\.execute-external-action$/);

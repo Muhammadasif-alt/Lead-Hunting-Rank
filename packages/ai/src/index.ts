@@ -6,6 +6,7 @@ export * from './prompts.js';
 export * from './registry.js';
 export * from './runtime.js';
 export * from './validators.js';
+export * from './agents/campaign.js';
 export * from './agents/contact.js';
 export * from './agents/research.js';
 export * from './agents/scoring.js';

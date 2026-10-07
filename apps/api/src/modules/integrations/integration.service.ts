@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import type { AppConfig } from '@revenue-os/config';
+import { googleOAuthConfig, type AppConfig } from '@revenue-os/config';
 import type { Integration, IntegrationStatus } from '@revenue-os/database';
 import { recordEvent } from '@revenue-os/events';
 import { isConnectable, PROVIDER_CATALOG, providerDefinition } from '@revenue-os/providers';
@@ -8,6 +8,7 @@ import { BusinessRuleError, ConflictError, NotFoundError, ValidationError } from
 import { actorUserId, writeAudit, type ServiceContext, type Tx } from '../../domain/service-context.js';
 import { PrismaService } from '../../infra/prisma.service.js';
 import { APP_CONFIG } from '../../infra/tokens.js';
+import { GoogleOAuthService } from './google-oauth.service.js';
 import { PROVIDER_RUNTIME } from './provider-runtime.js';
 
 const DAY = 24 * 3_600_000;
@@ -44,6 +45,7 @@ export class IntegrationService {
     private readonly prisma: PrismaService,
     @Inject(APP_CONFIG) private readonly config: AppConfig,
     @Inject(PROVIDER_RUNTIME) private readonly runtime: ProviderRuntime,
+    private readonly google: GoogleOAuthService,
   ) {}
 
   catalog() {
@@ -107,7 +109,7 @@ export class IntegrationService {
   }
 
   private serverKeys() {
-    return { llmProvider: this.config.LLM_PROVIDER, llmKeyConfigured: !!this.config.LLM_API_KEY };
+    return { llmProvider: this.config.LLM_PROVIDER, llmKeyConfigured: !!this.config.LLM_API_KEY, googleOAuth: !!googleOAuthConfig(this.config) };
   }
 
   /**
@@ -117,6 +119,9 @@ export class IntegrationService {
   async connect(ctx: ServiceContext, providerKey: string, input: { name?: string }) {
     const def = providerDefinition(providerKey);
     if (!def) throw new NotFoundError(`Unknown provider ${providerKey}`);
+    if (def.connection === 'OAUTH' && isConnectable(def, this.config.APP_ENV, this.serverKeys())) {
+      throw new ValidationError(`${def.name} connects through Google sign-in — use "Connect with Google"`);
+    }
     if (!isConnectable(def, this.config.APP_ENV, this.serverKeys())) {
       const why =
         def.status === 'PLANNED'
@@ -125,7 +130,9 @@ export class IntegrationService {
             ? 'test providers are disabled in production'
             : def.connection === 'SERVER_KEY'
               ? `the server needs LLM_PROVIDER=${def.key} and LLM_API_KEY`
-              : `needs ${def.connection} credentials`;
+              : def.connection === 'OAUTH'
+                ? 'the server needs GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET and ENCRYPTION_KEY'
+                : `needs ${def.connection} credentials`;
       throw new ValidationError(`${def.name} can't be connected here: ${why}`);
     }
     const integration = await this.prisma.client.$transaction(async (tx) => {
@@ -179,8 +186,8 @@ export class IntegrationService {
   }
 
   /** Stops new provider calls and marks it disconnected; history, mappings and usage stay (docs/12 §119). */
-  disconnect(ctx: ServiceContext, id: string) {
-    return this.change(
+  async disconnect(ctx: ServiceContext, id: string) {
+    const result = await this.change(
       ctx,
       id,
       ['ACTIVE', 'DEGRADED', 'AUTH_EXPIRED', 'RATE_LIMITED', 'ERROR', 'CONNECTING', 'DISABLED'],
@@ -189,6 +196,10 @@ export class IntegrationService {
       (tx, i) => recordEvent(tx, ctx, 'IntegrationDisconnected', i.id, { integrationId: i.id, provider: i.provider }),
       { disconnectedAt: new Date() },
     );
+    // OAuth mailboxes: revoke the grant and delete the stored tokens — reconnecting asks Google again.
+    const row = await this.prisma.client.integration.findUnique({ where: { id }, select: { provider: true } });
+    if (row?.provider === 'gmail') await this.google.forget(id);
+    return result;
   }
 
   private async change(

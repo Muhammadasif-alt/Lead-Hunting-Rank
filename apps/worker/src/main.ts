@@ -1,5 +1,5 @@
 import { hostname } from 'node:os';
-import { loadConfig } from '@revenue-os/config';
+import { googleOAuthConfig, loadConfig } from '@revenue-os/config';
 import { createPrismaClient } from '@revenue-os/database';
 import { PromptChangedError, PROMPTS, runCompanyIntelligence, syncPrompts } from '@revenue-os/ai';
 import { advanceMission, failMission, failResearch, runResearchJob, sweepDiscoveryMissions } from '@revenue-os/domain';
@@ -16,6 +16,7 @@ import {
   type JobHandler,
 } from '@revenue-os/events/runtime';
 import { FAKE_SEND_ACTION, FakeSideEffectProvider, RedisFakeProviderStore } from '@revenue-os/events/testing';
+import { prepareStep, settleCampaignAction, sweepCampaigns, syncAllMailboxes, withCampaignGuard } from '@revenue-os/outreach';
 import { createPolicyRevalidator, policySweep } from '@revenue-os/policy';
 import { createEmailSendExecutor, EMAIL_SEND_ACTION } from '@revenue-os/providers';
 import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
@@ -27,6 +28,7 @@ import {
   queuePrefix,
   type DiagnosticsPingResult,
   type AiCompanyJobData,
+  type CampaignStepJobData,
   type DiscoveryAdvanceJobData,
   type ResearchRunJobData,
 } from '@revenue-os/shared';
@@ -52,6 +54,7 @@ const providers = createProviderRuntime(db, {
   redis: connection,
   prefix,
   llm: { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY },
+  credentials: { db, encryptionKey: config.ENCRYPTION_KEY, google: googleOAuthConfig(config) ?? undefined },
   logger: { warn: (obj, msg) => logger.warn(obj, msg) },
 });
 
@@ -65,11 +68,42 @@ if (config.APP_ENV !== 'production') {
 }
 // Policy Engine (Phase 10): right before every provider call the action is decided again on current truth — kill switch,
 // suppression, the requester's permission/autonomy, the approval. Anything but ACT stops the call.
-const actions = externalActionHandlers(db, { executors, revalidate: createPolicyRevalidator() });
+// Campaign emails also check their campaign (active? prospect still in the sequence?) first.
+const actions = externalActionHandlers(db, { executors, revalidate: withCampaignGuard(createPolicyRevalidator()) });
 
 const policySweepJob: JobHandler = {
   timeoutMs: 60_000,
   handle: async () => policySweep(db),
+};
+
+// Campaigns (Phase 11): Postgres holds the schedule; the sweep makes sure each due step has a prepare job.
+const outreach = { db, providers: providers.gateway, publicUrl: config.APP_URL };
+const campaignSweep: JobHandler = {
+  timeoutMs: 60_000,
+  handle: async (data) =>
+    sweepCampaigns(db, async ({ workspaceId, enrollmentId, position }) => {
+      const job: CampaignStepJobData = { workspaceId, enrollmentId, position, schemaVersion: 1, correlationId: data.correlationId };
+      await producer.queue(QUEUES.ai).add(JOBS.campaignPrepareStep, job, {
+        jobId: `campaign-step-${enrollmentId}-${position}`,
+        priority: PRIORITY.NORMAL,
+        attempts: DEFAULT_ATTEMPTS,
+        backoff: { type: 'custom' },
+        ...JOB_RETENTION,
+      });
+    }),
+};
+const campaignPrepare: JobHandler = {
+  timeoutMs: 3 * 60_000,
+  handle: async (data) => ({ outcome: await prepareStep(outreach, data as unknown as CampaignStepJobData) }),
+};
+const campaignSettled: JobHandler = {
+  timeoutMs: 30_000,
+  handle: async (data) => ({ outcome: await settleCampaignAction(db, (data as unknown as { externalActionId: string }).externalActionId) }),
+};
+// Replies, unsubscribes and bounces stop the sequence; polling the mailbox is how we notice them.
+const mailboxSync: JobHandler = {
+  timeoutMs: 3 * 60_000,
+  handle: async () => ({ mailboxes: await syncAllMailboxes(db, providers.gateway) }),
 };
 
 const providerHealthCheck: JobHandler = {
@@ -152,6 +186,7 @@ const workers = [
       [JOBS.providerHealthCheck]: providerHealthCheck,
       [JOBS.discoverySweep]: discoverySweep,
       [JOBS.policySweep]: policySweepJob,
+      [JOBS.campaignSweep]: campaignSweep,
     },
   }),
   createQueueWorker({
@@ -182,7 +217,7 @@ const workers = [
     logger,
     metrics,
     concurrency: 2,
-    handlers: { [JOBS.aiCompanyIntelligence]: aiCompanyIntelligence },
+    handlers: { [JOBS.aiCompanyIntelligence]: aiCompanyIntelligence, [JOBS.campaignPrepareStep]: campaignPrepare },
   }),
   createQueueWorker({
     queue: QUEUES.outbound,
@@ -192,7 +227,17 @@ const workers = [
     logger,
     metrics,
     concurrency: 2,
-    handlers: { [JOBS.externalActionExecute]: actions[JOBS.externalActionExecute] },
+    handlers: { [JOBS.externalActionExecute]: actions[JOBS.externalActionExecute], [JOBS.campaignActionSettled]: campaignSettled },
+  }),
+  createQueueWorker({
+    queue: QUEUES.inbound,
+    prefix,
+    connection,
+    db,
+    logger,
+    metrics,
+    concurrency: 1,
+    handlers: { [JOBS.mailboxSync]: mailboxSync },
   }),
 ];
 
@@ -246,6 +291,14 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('policy-sweep', { every: 60_000 }, { name: JOBS.policySweep, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register policy sweep schedule'));
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('campaign-sweep', { every: 60_000 }, { name: JOBS.campaignSweep, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register campaign sweep schedule'));
+producer
+  .queue(QUEUES.inbound)
+  .upsertJobScheduler('mailbox-sync', { every: 2 * 60_000 }, { name: JOBS.mailboxSync, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register mailbox sync schedule'));
 
 let shuttingDown = false;
 async function shutdown(signal: string) {

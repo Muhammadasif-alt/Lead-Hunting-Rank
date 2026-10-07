@@ -79,6 +79,25 @@ export interface EventPayloads {
   ApprovalExpired: { approvalId: string; externalActionId: string };
   /** The action changed after the approval was asked for, so the approval no longer applies. */
   ApprovalInvalidated: { approvalId: string; externalActionId: string; reason: string };
+  // campaigns (docs/09 §21-33, docs/17 §67-76)
+  CampaignCreated: { campaignId: string; name: string };
+  CampaignUpdated: { campaignId: string; changedFields: string[] };
+  /** Pre-launch checks ran; READY when all blocking checks passed. */
+  CampaignChecked: { campaignId: string; status: string; failed: string[] };
+  CampaignStarted: { campaignId: string; enrolled: number };
+  CampaignPaused: { campaignId: string; reason: string | null };
+  CampaignResumed: { campaignId: string };
+  CampaignCompleted: { campaignId: string; reason: string };
+  CampaignArchived: { campaignId: string };
+  ProspectsEnrolled: { campaignId: string; count: number };
+  /** A genuine reply ended the cold sequence; pending follow-ups were cancelled. */
+  EnrollmentReplied: { enrollmentId: string; campaignId: string; companyId: string; mailboxMessageId: string | null };
+  EnrollmentSuppressed: { enrollmentId: string; campaignId: string; reason: string };
+  EnrollmentBlocked: { enrollmentId: string; campaignId: string; reason: string };
+  EnrollmentCompleted: { enrollmentId: string; campaignId: string };
+  EnrollmentRemoved: { enrollmentId: string; campaignId: string; reason: string };
+  CampaignMessageDrafted: { messageId: string; enrollmentId: string; campaignId: string; position: number; decision: string };
+  MailboxMessageReceived: { mailboxMessageId: string; integrationId: string; kind: string; enrollmentId: string | null };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -138,7 +157,11 @@ export type AggregateType =
   | 'OPPORTUNITY_HYPOTHESIS'
   | 'AGENT_TASK'
   | 'SUPPRESSION'
-  | 'APPROVAL_REQUEST';
+  | 'APPROVAL_REQUEST'
+  | 'CAMPAIGN'
+  | 'CAMPAIGN_ENROLLMENT'
+  | 'CAMPAIGN_MESSAGE'
+  | 'MAILBOX_MESSAGE';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -165,7 +188,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -207,6 +230,16 @@ const companyIntelligence: EventRoute = {
   priority: PRIORITY.BACKGROUND,
   toJobData: (e) => ({ companyId: e.payload.companyId, inputKey: `research:${e.aggregateId}`, schemaVersion: 1 }),
 };
+
+/** Campaign bookkeeping after an outbound action changes state; ignores actions that aren't campaign messages. */
+const campaignActionSettled: EventRoute = {
+  consumer: 'campaign.action-settled',
+  queue: QUEUES.outbound,
+  job: JOBS.campaignActionSettled,
+  priority: PRIORITY.HIGH,
+  toJobData: (e) => ({ externalActionId: e.aggregateId, schemaVersion: 1 }),
+};
+const settles = (consumer: string): EventRoute => ({ ...campaignActionSettled, consumer: `campaign.action-${consumer}` });
 
 const entity = (owner: EventDefinition['owner'], aggregateType: AggregateType, description: string, pii: 'none' | 'low' = 'none'): EventDefinition => ({
   version: 1,
@@ -268,6 +301,22 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   AgentTaskBlocked: entity('ai', 'AGENT_TASK', 'An agent task could not run (disabled, budget, no model, tool not allowed)'),
   CompanyAssessed: entity('ai', 'COMPANY', 'The Scoring Agent assessed a company (levels with reasons)'),
   AgentDefinitionUpdated: entity('ai', 'WORKSPACE', 'An agent was turned on/off or its daily limit changed'),
+  CampaignCreated: entity('campaigns', 'CAMPAIGN', 'A draft campaign was created'),
+  CampaignUpdated: entity('campaigns', 'CAMPAIGN', 'A draft campaign changed (field names, not values)'),
+  CampaignChecked: entity('campaigns', 'CAMPAIGN', 'Pre-launch checks ran (audience, contacts, suppression, mailbox, policy)'),
+  CampaignStarted: entity('campaigns', 'CAMPAIGN', 'A person launched the campaign; the first cohort was enrolled'),
+  CampaignPaused: entity('campaigns', 'CAMPAIGN', 'The campaign stopped sending; inbound keeps being processed'),
+  CampaignResumed: entity('campaigns', 'CAMPAIGN', 'A paused campaign continues — every prospect is re-checked first'),
+  CampaignCompleted: entity('campaigns', 'CAMPAIGN', 'The campaign ended (audience exhausted or ended by a person)'),
+  CampaignArchived: entity('campaigns', 'CAMPAIGN', 'The campaign was archived (history kept)'),
+  ProspectsEnrolled: entity('campaigns', 'CAMPAIGN', 'Eligible prospects were enrolled into the campaign'),
+  EnrollmentReplied: entity('campaigns', 'CAMPAIGN_ENROLLMENT', 'The prospect replied — the cold sequence stopped'),
+  EnrollmentSuppressed: entity('campaigns', 'CAMPAIGN_ENROLLMENT', 'The prospect unsubscribed or is on the do-not-contact list'),
+  EnrollmentBlocked: entity('campaigns', 'CAMPAIGN_ENROLLMENT', 'The prospect can not be contacted right now (invalid email, policy, rejected draft)'),
+  EnrollmentCompleted: entity('campaigns', 'CAMPAIGN_ENROLLMENT', 'Every step of the sequence was sent'),
+  EnrollmentRemoved: entity('campaigns', 'CAMPAIGN_ENROLLMENT', 'A person removed the prospect from the campaign'),
+  CampaignMessageDrafted: entity('campaigns', 'CAMPAIGN_MESSAGE', 'The Campaign Agent drafted a message; the Policy Engine decided on it'),
+  MailboxMessageReceived: entity('campaigns', 'MAILBOX_MESSAGE', 'Mailbox sync saw an inbound email (reply, auto-reply, unsubscribe or bounce)', 'low'),
   OutboundStateChanged: entity('policy', 'WORKSPACE', 'Outbound was paused, emergency-stopped or resumed (kill switch)'),
   PolicyUpdated: entity('policy', 'WORKSPACE', 'The autonomy level or a configurable rule changed (new policy version)'),
   SuppressionAdded: entity('policy', 'SUPPRESSION', 'A contact, domain, person or company was put on the do-not-contact list'),
@@ -285,13 +334,13 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   ExternalActionPrepared: entity('execution', 'EXTERNAL_ACTION', 'An external side effect was prepared with an idempotency key'),
   ExternalActionQueued: {
     ...entity('execution', 'EXTERNAL_ACTION', 'An external action is ready to execute'),
-    routes: [executeExternalAction],
+    routes: [executeExternalAction, settles('queued')],
   },
-  ExternalActionSucceeded: entity('execution', 'EXTERNAL_ACTION', 'The provider confirmed the side effect'),
-  ExternalActionFailed: entity('execution', 'EXTERNAL_ACTION', 'The side effect failed permanently or ran out of retries'),
-  ExternalActionBlocked: entity('execution', 'EXTERNAL_ACTION', 'Revalidation before execution blocked the action'),
-  ExternalActionCancelled: entity('execution', 'EXTERNAL_ACTION', 'The action was cancelled before execution'),
-  ExternalActionWaiting: entity('execution', 'EXTERNAL_ACTION', 'The action waits on a condition (e.g. provider re-auth)'),
+  ExternalActionSucceeded: { ...entity('execution', 'EXTERNAL_ACTION', 'The provider confirmed the side effect'), routes: [settles('succeeded')] },
+  ExternalActionFailed: { ...entity('execution', 'EXTERNAL_ACTION', 'The side effect failed permanently or ran out of retries'), routes: [settles('failed')] },
+  ExternalActionBlocked: { ...entity('execution', 'EXTERNAL_ACTION', 'Revalidation before execution blocked the action'), routes: [settles('blocked')] },
+  ExternalActionCancelled: { ...entity('execution', 'EXTERNAL_ACTION', 'The action was cancelled before execution'), routes: [settles('cancelled')] },
+  ExternalActionWaiting: { ...entity('execution', 'EXTERNAL_ACTION', 'The action waits on a condition (e.g. provider re-auth)'), routes: [settles('waiting')] },
   ExternalActionClaimExpired: {
     ...entity('execution', 'EXTERNAL_ACTION', 'A worker died while executing; outcome must be reconciled'),
     routes: [{ ...executeExternalAction, consumer: 'outbound.reconcile-external-action', priority: PRIORITY.HIGH }],

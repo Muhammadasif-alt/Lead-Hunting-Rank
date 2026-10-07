@@ -26,10 +26,18 @@ const configSchema = z
       .string()
       .refine((v) => Buffer.from(v, 'base64').length === 32, 'must be 32 bytes, base64-encoded')
       .optional(),
+    /** Google OAuth client (Gmail now, Calendar later). Without it Gmail can't be connected. */
+    GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+    GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+    /** Must match the redirect URI registered in Google Cloud; defaults to API_URL + /api/v1/integrations/oauth/google/callback. */
+    GOOGLE_OAUTH_REDIRECT_URL: z.url().optional(),
   })
   .superRefine((cfg, ctx) => {
     if (cfg.APP_ENV === 'production' && !cfg.ENCRYPTION_KEY) {
       ctx.addIssue({ code: 'custom', path: ['ENCRYPTION_KEY'], message: 'required in production' });
+    }
+    if (cfg.GOOGLE_OAUTH_CLIENT_ID && (!cfg.GOOGLE_OAUTH_CLIENT_SECRET || !cfg.ENCRYPTION_KEY)) {
+      ctx.addIssue({ code: 'custom', path: ['GOOGLE_OAUTH_CLIENT_ID'], message: 'needs GOOGLE_OAUTH_CLIENT_SECRET and ENCRYPTION_KEY too' });
     }
     if (cfg.LLM_PROVIDER !== 'fake' && !cfg.LLM_API_KEY) {
       ctx.addIssue({
@@ -39,7 +47,18 @@ const configSchema = z
       });
     }
   })
-  .transform((cfg) => ({ ...cfg, LOG_PRETTY: cfg.LOG_PRETTY ?? cfg.APP_ENV === 'development' }));
+  .transform((cfg) => ({
+    ...cfg,
+    LOG_PRETTY: cfg.LOG_PRETTY ?? cfg.APP_ENV === 'development',
+    GOOGLE_OAUTH_REDIRECT_URL: cfg.GOOGLE_OAUTH_REDIRECT_URL ?? `${cfg.API_URL.replace(/\/$/, '')}/api/v1/integrations/oauth/google/callback`,
+  }));
+
+/** The Google OAuth client, when fully configured. */
+export function googleOAuthConfig(cfg: AppConfig): { clientId: string; clientSecret: string; redirectUri: string } | null {
+  return cfg.GOOGLE_OAUTH_CLIENT_ID && cfg.GOOGLE_OAUTH_CLIENT_SECRET && cfg.ENCRYPTION_KEY
+    ? { clientId: cfg.GOOGLE_OAUTH_CLIENT_ID, clientSecret: cfg.GOOGLE_OAUTH_CLIENT_SECRET, redirectUri: cfg.GOOGLE_OAUTH_REDIRECT_URL }
+    : null;
+}
 
 export type AppConfig = z.output<typeof configSchema>;
 

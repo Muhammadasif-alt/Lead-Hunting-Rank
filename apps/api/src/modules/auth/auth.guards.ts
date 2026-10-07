@@ -6,7 +6,7 @@ import { updateContext } from '@revenue-os/shared/server';
 import { APP_CONFIG } from '../../infra/tokens.js';
 import { AccessService } from './access.service.js';
 import { AuthService } from './auth.service.js';
-import { IS_PUBLIC, REQUIRED_PERMISSIONS, SKIP_WORKSPACE, type AuthedRequest } from './auth.decorators.js';
+import { CSRF_EXEMPT, IS_PUBLIC, REQUIRED_PERMISSIONS, SKIP_WORKSPACE, type AuthedRequest } from './auth.decorators.js';
 import { readSessionToken } from './session-cookie.js';
 
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
@@ -25,13 +25,17 @@ function flag(reflector: Reflector, key: symbol, ctx: ExecutionContext): boolean
 export class CsrfGuard implements CanActivate {
   private readonly allowed: Set<string>;
 
-  constructor(@Inject(APP_CONFIG) config: AppConfig) {
+  constructor(
+    @Inject(APP_CONFIG) config: AppConfig,
+    private readonly reflector: Reflector,
+  ) {
     this.allowed = new Set([new URL(config.APP_URL).origin, new URL(config.API_URL).origin]);
   }
 
   canActivate(ctx: ExecutionContext): boolean {
     const req = ctx.switchToHttp().getRequest<AuthedRequest>();
     if (SAFE_METHODS.has(req.method)) return true;
+    if (flag(this.reflector, CSRF_EXEMPT, ctx) && flag(this.reflector, IS_PUBLIC, ctx)) return true;
     const source = req.headers.origin ?? (req.headers.referer ? safeOrigin(req.headers.referer) : undefined);
     if (source && this.allowed.has(source)) return true;
     throw new ForbiddenError('Cross-site request blocked');

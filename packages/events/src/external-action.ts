@@ -60,7 +60,8 @@ export type ReconcileResult = { status: 'SUCCEEDED'; providerRef: string } | { s
  * - reconcile: look the action up at the provider by its idempotency key/reference.
  */
 export interface ActionExecutor {
-  execute(action: ExternalActionView, signal: AbortSignal): Promise<{ providerRef: string }>;
+  /** `meta`: extra provider identifiers worth keeping (e.g. an email's thread id) — never secrets. */
+  execute(action: ExternalActionView, signal: AbortSignal): Promise<{ providerRef: string; meta?: Record<string, string> }>;
   reconcile?(action: ExternalActionView): Promise<ReconcileResult>;
 }
 
@@ -257,14 +258,15 @@ export async function executeExternalAction(
   }
 
   let providerRef: string;
+  let meta: Record<string, string> | undefined;
   try {
-    providerRef = (await withTimeout((signal) => executor.execute(view, signal), deps.timeoutMs ?? 30_000)).providerRef;
+    ({ providerRef, meta } = await withTimeout((signal) => executor.execute(view, signal), deps.timeoutMs ?? 30_000));
   } catch (err) {
     return handleExecutionError(db, action, err, attempt, deps, source);
   }
 
   await db.$transaction(async (tx) => {
-    const ok = await transition(tx, action, ['EXECUTING'], 'SUCCEEDED', { responseRef: providerRef, executedAt: new Date(), statusReason: null });
+    const ok = await transition(tx, action, ['EXECUTING'], 'SUCCEEDED', { responseRef: providerRef, responseMeta: meta, executedAt: new Date(), statusReason: null });
     if (!ok) throw new Error(`ExternalAction ${action.id} left EXECUTING while its call was in flight`);
     await recordEvent(tx, source, 'ExternalActionSucceeded', action.id, { ...base, providerRef, attempt });
   });

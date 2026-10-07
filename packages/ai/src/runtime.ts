@@ -6,6 +6,7 @@ import type { ProviderErrorKind, ProviderGateway } from '@revenue-os/providers';
 import { describeError, RateLimitedError } from '@revenue-os/shared';
 import { z } from 'zod';
 import type { AgentOutcome, AgentSpec } from './agent.js';
+import { campaignAgent } from './agents/campaign.js';
 import { contactAgent } from './agents/contact.js';
 import { researchAgent } from './agents/research.js';
 import { scoringAgent } from './agents/scoring.js';
@@ -17,7 +18,7 @@ import { blockingFailures, type ValidationResult } from './validators.js';
 
 /** The agents in the order they run for a company: plan → interpret the website → contact route → assess. */
 export const COMPANY_AGENTS: AgentSpec<any, any>[] = [researchAgent, webAuditAgent, contactAgent, scoringAgent];
-export const PROMPTS: PromptTemplate[] = COMPANY_AGENTS.map((a) => a.prompt);
+export const PROMPTS: PromptTemplate[] = [...COMPANY_AGENTS, campaignAgent].map((a) => a.prompt);
 
 export interface AiDeps {
   db: PrismaClient;

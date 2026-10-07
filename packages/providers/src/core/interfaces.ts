@@ -37,12 +37,18 @@ export interface Usage {
 
 export interface SendEmailInput {
   from: string;
+  /** Display name for From. */
+  fromName?: string;
   to: string[];
   subject: string;
   text: string;
   html?: string;
   /** Provider thread to reply in, when continuing a conversation. */
   threadRef?: string;
+  /** RFC 5322 Message-ID of the message this one follows up on (threads the follow-up for the recipient). */
+  inReplyTo?: string;
+  /** One-click unsubscribe endpoint (List-Unsubscribe header, RFC 8058). */
+  unsubscribeUrl?: string;
   /** Our idempotency key, passed to the provider so a lost response can be reconciled (docs/12 §30). */
   idempotencyKey: string;
 }
@@ -51,6 +57,8 @@ export interface SendEmailResult {
   messageId: string;
   threadId: string;
   sentAt: string;
+  /** The RFC 5322 Message-ID header we set — what a follow-up's In-Reply-To points at. */
+  internetMessageId?: string;
 }
 
 export interface EmailMessage {
@@ -74,7 +82,7 @@ export interface EmailChanges {
 export interface EmailProvider extends ProviderAdapter {
   sendMessage(input: SendEmailInput, options: CallOptions): Promise<SendEmailResult & Usage>;
   /** Reconciliation: was a message with this idempotency key already sent? */
-  findSentByIdempotencyKey(idempotencyKey: string, options: CallOptions): Promise<SendEmailResult | null>;
+  findSentByIdempotencyKey(idempotencyKey: string, options: CallOptions, from?: string): Promise<SendEmailResult | null>;
   getMessage(messageId: string, options: CallOptions): Promise<EmailMessage | null>;
   getThread(threadId: string, options: CallOptions): Promise<EmailMessage[]>;
   listChanges(cursor: string | null, options: CallOptions): Promise<EmailChanges>;

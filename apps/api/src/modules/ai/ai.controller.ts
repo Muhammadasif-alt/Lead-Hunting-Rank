@@ -5,7 +5,7 @@ import { AccessService, type Access } from '../auth/access.service.js';
 import { CurrentAccess, RequirePermission } from '../auth/auth.decorators.js';
 import { AiService } from './ai.service.js';
 
-const AgentTypeParam = new ZodValidationPipe(z.enum(['RESEARCH', 'WEB_AUDIT', 'CONTACT', 'SCORING']));
+const AgentTypeParam = new ZodValidationPipe(z.enum(['RESEARCH', 'WEB_AUDIT', 'CONTACT', 'SCORING', 'CAMPAIGN']));
 const UpdateAgentInput = z
   .strictObject({ enabled: z.boolean().optional(), dailyRunLimit: z.number().int().min(0).max(1_000_000).nullable().optional() })
   .refine((v) => v.enabled !== undefined || v.dailyRunLimit !== undefined, 'Nothing to change');
@@ -26,7 +26,7 @@ export class AiController {
 
   @Patch('agents/:type')
   @RequirePermission('policy.manage')
-  update(@Param('type', AgentTypeParam) type: 'RESEARCH' | 'WEB_AUDIT' | 'CONTACT' | 'SCORING', @Body(new ZodValidationPipe(UpdateAgentInput)) input: z.output<typeof UpdateAgentInput>, @CurrentAccess() access: Access) {
+  update(@Param('type', AgentTypeParam) type: 'RESEARCH' | 'WEB_AUDIT' | 'CONTACT' | 'SCORING' | 'CAMPAIGN', @Body(new ZodValidationPipe(UpdateAgentInput)) input: z.output<typeof UpdateAgentInput>, @CurrentAccess() access: Access) {
     return this.ai.update(this.access.serviceContext(access), type, input);
   }
 }

@@ -16,3 +16,6 @@ export * from './storage/local.js';
 export * from './web/fetcher.js';
 export * from './llm/anthropic.js';
 export * from './executors/email-send.js';
+export * from './email/gmail.js';
+export * from './email/google-oauth.js';
+export * from './credentials/secret.js';

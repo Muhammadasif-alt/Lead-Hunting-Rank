@@ -43,6 +43,14 @@ export const JOBS = {
   aiCompanyIntelligence: 'ai.company.intelligence',
   /** Periodic: expire old approvals; re-queue WAITING actions whose time has come (execution revalidates each one). */
   policySweep: 'policy.sweep',
+  /** Periodic: ACTIVE enrollments whose next step is due get a prepare job (Postgres is the schedule, docs/11 §31-34). */
+  campaignSweep: 'campaign.sweep',
+  /** Re-check one prospect, draft its next message, ask the Policy Engine. Payload: CampaignStepJobData. */
+  campaignPrepareStep: 'campaign.step.prepare',
+  /** An outbound action of a campaign settled (sent, blocked, cancelled…) → message + enrollment follow. Payload: externalActionId. */
+  campaignActionSettled: 'campaign.action.settled',
+  /** Periodic: read new inbound mail of connected mailboxes — replies, unsubscribes, bounces. */
+  mailboxSync: 'mailbox.sync',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -97,6 +105,13 @@ export interface ResearchRunJobData extends JobTracing {
   runId?: string;
   trigger: 'DISCOVERY' | 'MANUAL';
   missionId?: string;
+  schemaVersion: 1;
+}
+
+export interface CampaignStepJobData extends JobTracing {
+  workspaceId: string;
+  enrollmentId: string;
+  position: number;
   schemaVersion: 1;
 }
 

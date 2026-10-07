@@ -1,5 +1,5 @@
 import type { FactoryProvider } from '@nestjs/common';
-import type { AppConfig } from '@revenue-os/config';
+import { googleOAuthConfig, type AppConfig } from '@revenue-os/config';
 import { createProviderRuntime, type ProviderRuntime } from '@revenue-os/providers/runtime';
 import type { Logger } from '@revenue-os/shared/server';
 import { PrismaService } from '../../infra/prisma.service.js';
@@ -19,6 +19,7 @@ export const providerRuntimeProvider: FactoryProvider<ProviderRuntime> = {
       redis: queues.redis,
       prefix: queues.prefix,
       llm: { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY },
+      credentials: { db: prisma.client, encryptionKey: config.ENCRYPTION_KEY, google: googleOAuthConfig(config) ?? undefined },
       logger: { warn: (obj, msg) => logger.warn(obj, msg) },
     }),
 };

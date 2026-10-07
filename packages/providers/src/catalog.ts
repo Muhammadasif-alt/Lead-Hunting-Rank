@@ -160,9 +160,8 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     costModel: 'FREE',
     connection: 'OAUTH',
     fake: false,
-    status: 'PLANNED',
-    plannedPhase: 11,
-    description: 'Send and sync email from your own mailbox, with minimum OAuth scopes.',
+    status: 'AVAILABLE',
+    description: 'Send from your own mailbox and notice replies, unsubscribes and bounces. Minimum scopes: send + read. Needs the Google OAuth client on the server (GOOGLE_OAUTH_CLIENT_ID / SECRET) and ENCRYPTION_KEY.',
   },
   {
     key: 'google_calendar',
@@ -198,6 +197,8 @@ export function providerDefinition(key: string): ProviderDefinition | undefined 
 export interface ServerKeys {
   llmProvider?: string;
   llmKeyConfigured?: boolean;
+  /** Google OAuth client + encryption key configured — Gmail (and later Calendar) can be connected. */
+  googleOAuth?: boolean;
 }
 
 /** Providers a workspace may connect in this environment. Fakes never in production. */
@@ -205,5 +206,6 @@ export function isConnectable(def: ProviderDefinition, appEnv: string, keys: Ser
   if (def.status !== 'AVAILABLE' || (def.fake && appEnv === 'production')) return false;
   if (def.connection === 'NONE') return true;
   if (def.connection === 'SERVER_KEY') return def.category === 'AI' && keys.llmProvider === def.key && keys.llmKeyConfigured === true;
+  if (def.connection === 'OAUTH') return def.key === 'gmail' && keys.googleOAuth === true;
   return false;
 }

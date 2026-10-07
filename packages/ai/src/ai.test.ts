@@ -7,7 +7,7 @@ import { webAuditAgent } from './agents/web-audit.js';
 import { EVAL_CASES } from './eval/cases.js';
 import { evaluateAgents, formatReport } from './eval/run.js';
 import { promptChecksum, renderPrompt } from './prompts.js';
-import { AGENTS, assertToolAllowed, ToolNotAllowedError } from './registry.js';
+import { AGENTS, assertToolAllowed, ToolNotAllowedError, TOOLS } from './registry.js';
 import { PROMPTS } from './runtime.js';
 
 const caseNamed = (name: string) => EVAL_CASES.find((c) => c.name.startsWith(name))!;
@@ -66,6 +66,7 @@ describe('prompts and tools', () => {
 
   test('least privilege: an agent cannot use a tool outside its allowlist; none can send or book', () => {
     assert.throws(() => assertToolAllowed({ agentType: 'CONTACT', allowedTools: AGENTS.CONTACT.allowedTools }, 'proposeHypothesis'), ToolNotAllowedError);
-    for (const a of Object.values(AGENTS)) assert.ok(a.allowedTools.every((t) => t.startsWith('read') || t.startsWith('propose')), 'Phase 9 agents only read and propose');
+    // Only READ and PROPOSAL tools: drafting an email is a proposal — sending is an external action the Policy Engine decides.
+    for (const a of Object.values(AGENTS)) assert.ok(a.allowedTools.every((t) => TOOLS[t].category === 'READ' || TOOLS[t].category === 'PROPOSAL'), `${a.label} may only read and propose`);
   });
 });

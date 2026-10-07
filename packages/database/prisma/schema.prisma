@@ -58,6 +58,10 @@ enum EntityType {
   SUPPRESSION
   APPROVAL_REQUEST
   POLICY_DECISION
+  CAMPAIGN
+  CAMPAIGN_ENROLLMENT
+  CAMPAIGN_MESSAGE
+  MAILBOX_MESSAGE
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -136,6 +140,14 @@ model Workspace {
   suppressions           Suppression[]
   policyDecisions        PolicyDecision[]
   approvalRequests       ApprovalRequest[]
+  campaigns              Campaign[]
+  campaignSteps          CampaignStep[]
+  campaignEnrollments    CampaignEnrollment[]
+  campaignMessages       CampaignMessage[]
+  mailboxMessages        MailboxMessage[]
+  mailboxCursors         MailboxCursor[]
+  integrationCredentials IntegrationCredential[]
+  oauthStates            OAuthState[]
 }
 
 enum UserStatus {
@@ -975,6 +987,8 @@ model ExternalAction {
   causationId       String?
   requestRef        String?
   responseRef       String?
+  /// Extra provider identifiers from the result (e.g. the email thread id) — never secrets.
+  responseMeta      Json?
   attemptCount      Int                  @default(0)
   lastError         String?
   statusReason      String?
@@ -1731,6 +1745,7 @@ enum AgentType {
   WEB_AUDIT
   CONTACT
   SCORING
+  CAMPAIGN
 }
 
 /**
@@ -2144,4 +2159,266 @@ model ApprovalRequest {
   @@index([workspaceId, status, createdAt])
   @@index([workspaceId, externalActionId])
   @@index([status, expiresAt])
+}
+
+// ───────────────────────────── Campaigns + outreach (Phase 11) ─────────────────────────────
+
+enum CampaignStatus {
+  DRAFT
+  READY
+  ACTIVE
+  PAUSED
+  BLOCKED
+  COMPLETED
+  ARCHIVED
+}
+
+enum CampaignObjective {
+  START_CONVERSATIONS
+  BOOK_MEETINGS
+  QUOTE_REQUESTS
+  REENGAGE
+  VALIDATE_MARKET
+}
+
+/**
+ * An outreach campaign (docs/06 §46-56, docs/09 §21-27, screen #6). DRAFT is freely editable and can't send; READY
+ * means the pre-launch checks passed; only an explicit launch makes it ACTIVE. A completed campaign never becomes
+ * active again — clone it instead.
+ */
+model Campaign {
+  id                   String            @id @default(uuid()) @db.Uuid
+  workspaceId          String            @db.Uuid
+  name                 String
+  objective            CampaignObjective @default(START_CONVERSATIONS)
+  status               CampaignStatus    @default(DRAFT)
+  statusReason         String?
+  /// What we offer, in plain words (the AI picks what is relevant per prospect).
+  offer                String            @default("")
+  /// Who: market, industries, opportunity keys, priority (see @revenue-os/outreach AudienceFilter).
+  audience             Json              @default("{}")
+  /// How: call to action, tone, things to avoid.
+  strategy             Json              @default("{}")
+  /// The mailbox (EMAIL_SEND integration) every message of this campaign is sent from.
+  mailboxIntegrationId String?           @db.Uuid
+  senderName           String            @default("")
+  /// Prospects enrolled at launch (the first cohort); more are added explicitly.
+  cohortSize           Int               @default(25)
+  /// First messages per day for this campaign (follow-ups are not counted).
+  dailyNewLimit        Int               @default(20)
+  checks               Json?
+  checkedAt            DateTime?         @db.Timestamptz(3)
+  launchedAt           DateTime?         @db.Timestamptz(3)
+  pausedAt             DateTime?         @db.Timestamptz(3)
+  completedAt          DateTime?         @db.Timestamptz(3)
+  createdBy            String?           @db.Uuid
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+  version              Int               @default(1)
+
+  workspace   Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  steps       CampaignStep[]
+  enrollments CampaignEnrollment[]
+  messages    CampaignMessage[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, status])
+}
+
+enum CampaignStepKind {
+  FIRST_TOUCH
+  FOLLOW_UP
+}
+
+/** One touch of the sequence. Before every step the prospect is re-checked — a follow-up never fires blindly. */
+model CampaignStep {
+  id          String           @id @default(uuid()) @db.Uuid
+  workspaceId String           @db.Uuid
+  campaignId  String           @db.Uuid
+  position    Int
+  kind        CampaignStepKind
+  /// Days after the previous message was sent (0 for the first touch).
+  delayDays   Int
+  /// What a follow-up adds: CLARIFY_VALUE, NEW_OBSERVATION, CLOSE_THE_LOOP — never "just following up".
+  angle       String           @default("FIRST_TOUCH")
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  campaign  Campaign          @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Cascade)
+  messages  CampaignMessage[]
+
+  @@unique([workspaceId, id])
+  @@unique([campaignId, position])
+}
+
+enum EnrollmentStatus {
+  ELIGIBLE
+  ENROLLED
+  ACTIVE
+  REPLIED
+  PAUSED
+  COMPLETED
+  REMOVED
+  SUPPRESSED
+  BLOCKED
+}
+
+/**
+ * One prospect in one campaign (docs/09 §28-33). One company per campaign (account protection). REPLIED ends the cold
+ * sequence for good; SUPPRESSED never resumes.
+ */
+model CampaignEnrollment {
+  id                  String           @id @default(uuid()) @db.Uuid
+  workspaceId         String           @db.Uuid
+  campaignId          String           @db.Uuid
+  companyId           String           @db.Uuid
+  personId            String?          @db.Uuid
+  contactPointId      String?          @db.Uuid
+  email               String
+  firstName           String?
+  status              EnrollmentStatus @default(ENROLLED)
+  statusReason        String?
+  nextStepPosition    Int              @default(1)
+  nextStepDueAt       DateTime?        @db.Timestamptz(3)
+  threadRef           String?
+  lastSentAt          DateTime?        @db.Timestamptz(3)
+  repliedAt           DateTime?        @db.Timestamptz(3)
+  completedAt         DateTime?        @db.Timestamptz(3)
+  /// Why they qualified at enrollment time (facts as of then).
+  eligibilitySnapshot Json             @default("{}")
+  /// Opaque token for the one-click unsubscribe link (RFC 8058).
+  unsubscribeToken    String           @unique
+  enrolledAt          DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime         @updatedAt @db.Timestamptz(3)
+  version             Int              @default(1)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  campaign  Campaign          @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Cascade)
+  messages  CampaignMessage[]
+
+  @@unique([workspaceId, id])
+  @@unique([campaignId, companyId])
+  @@index([workspaceId, status, nextStepDueAt])
+  @@index([workspaceId, email])
+  @@index([threadRef])
+}
+
+enum CampaignMessageStatus {
+  DRAFT_REJECTED
+  PENDING_APPROVAL
+  WAITING
+  QUEUED
+  SENT
+  BLOCKED
+  CANCELLED
+  FAILED
+}
+
+/** One drafted message for one step of one enrollment; sent only through its ExternalAction. */
+model CampaignMessage {
+  id                String                @id @default(uuid()) @db.Uuid
+  workspaceId       String                @db.Uuid
+  campaignId        String                @db.Uuid
+  enrollmentId      String                @db.Uuid
+  stepId            String                @db.Uuid
+  position          Int
+  agentTaskId       String?               @db.Uuid
+  externalActionId  String?               @unique @db.Uuid
+  subject           String
+  body              String
+  /// Personalization claims with the evidence each rests on.
+  claims            Json                  @default("[]")
+  status            CampaignMessageStatus
+  statusReason      String?
+  providerMessageId String?
+  threadRef         String?
+  sentAt            DateTime?             @db.Timestamptz(3)
+  createdAt         DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime              @updatedAt @db.Timestamptz(3)
+
+  workspace  Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  campaign   Campaign           @relation(fields: [workspaceId, campaignId], references: [workspaceId, id], onDelete: Cascade)
+  enrollment CampaignEnrollment @relation(fields: [workspaceId, enrollmentId], references: [workspaceId, id], onDelete: Cascade)
+  step       CampaignStep       @relation(fields: [workspaceId, stepId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([enrollmentId, stepId])
+  @@index([workspaceId, campaignId, createdAt])
+}
+
+enum MailboxMessageKind {
+  REPLY
+  AUTO_REPLY
+  UNSUBSCRIBE
+  BOUNCE
+  UNMATCHED
+}
+
+/**
+ * An inbound email seen by mailbox sync (docs/11 §61). Deduplicated per mailbox; Phase 12 builds conversations on
+ * these. A genuine reply stops the cold sequence; "unsubscribe" suppresses; a bounce marks the address invalid.
+ */
+model MailboxMessage {
+  id                String             @id @default(uuid()) @db.Uuid
+  workspaceId       String             @db.Uuid
+  integrationId     String             @db.Uuid
+  providerMessageId String
+  threadRef         String?
+  fromEmail         String
+  toEmails          String[]
+  subject           String
+  snippet           String
+  occurredAt        DateTime           @db.Timestamptz(3)
+  kind              MailboxMessageKind
+  campaignId        String?            @db.Uuid
+  enrollmentId      String?            @db.Uuid
+  createdAt         DateTime           @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([integrationId, providerMessageId])
+  @@index([workspaceId, enrollmentId])
+  @@index([workspaceId, occurredAt])
+}
+
+/** Where mailbox sync continues (provider history cursor). */
+model MailboxCursor {
+  integrationId String   @id @db.Uuid
+  workspaceId   String   @db.Uuid
+  cursor        String
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+}
+
+/**
+ * Encrypted provider credentials (docs/12 §19-30): AES-256-GCM with ENCRYPTION_KEY. Never returned by the API, never
+ * logged, never in AI context.
+ */
+model IntegrationCredential {
+  id            String   @id @default(uuid()) @db.Uuid
+  workspaceId   String   @db.Uuid
+  integrationId String   @unique @db.Uuid
+  ciphertext    String
+  iv            String
+  authTag       String
+  keyVersion    Int      @default(1)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+}
+
+/** One OAuth attempt: bound to workspace + user, short-lived, single use, PKCE (docs/12 §19-30 OAuth state protection). */
+model OAuthState {
+  id           String    @id @default(uuid()) @db.Uuid
+  workspaceId  String    @db.Uuid
+  userId       String    @db.Uuid
+  provider     String
+  stateHash    String    @unique
+  codeVerifier String
+  expiresAt    DateTime  @db.Timestamptz(3)
+  usedAt       DateTime? @db.Timestamptz(3)
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 }

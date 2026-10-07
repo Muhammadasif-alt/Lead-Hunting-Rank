@@ -18,7 +18,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 8 | Research + Intelligence | ✅ done 2026-10-05 |
 | 9 | AI Runtime + Agents | ✅ done 2026-10-06 |
 | 10 | Policy Engine | ✅ done 2026-10-06 |
-| 11 … 24 | Campaigns → Inbox → … → Production + autonomy rollout | ⬜ |
+| 11 | Campaigns + Outreach | ✅ done 2026-10-07 |
+| 12 … 24 | Inbox → … → Production + autonomy rollout | ⬜ |
 
 Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy Engine, §67-76 Phase 11 Campaigns, … §147-155 Phase 24). The short list in docs/17 §1 has no separate policy phase, so its later numbers are one lower.
 
@@ -158,6 +159,20 @@ Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy E
 - [x] DoD tests (engine unit + DB integration): suppressed contact cannot send (incl. a suppression racing a queued action); kill switch cannot send (emergency stop blocks queued, pause waits and resumes one by one); unauthorized AI cannot send (no authority → BLOCK, low autonomy → ASK, disabled agent, lowered autonomy re-checked at execution, AI can't approve); stale approval cannot send (edited before/after approval, expired, rejected, double decision); policy failure cannot default allow (unknown action, evaluation error at execution)
 - Deferred by plan: campaign/conversation/market scope rules and frequency caps per company (Phase 11–12 with campaigns), pricing/discount/claim policies (Phase 12–13), budgets per mission/goal (Phase 19), approvals in the Human Attention inbox + SLAs (Phase 21), incident-driven autonomy reduction and shadow mode (Phase 24), natural-language policy editing
 - After pulling: `pnpm install`, `pnpm db:deploy`
+
+## Phase 11 — Definition of Done
+- [x] Schema: Campaign (DRAFT → READY → ACTIVE ⇄ PAUSED → COMPLETED/ARCHIVED, BLOCKED; offer, audience filter, strategy, mailbox, cohort + daily new limit, readiness checks), CampaignStep (first touch + up to 3 follow-ups with delay and angle), CampaignEnrollment (one active campaign per person, next step + due time, stop reason), CampaignMessage (draft, claims with evidence ids, validation, link to its ExternalAction), MailboxMessage + MailboxCursor (inbound sync), IntegrationCredential (AES-256-GCM encrypted tokens) + OAuthState (PKCE); ExternalAction.responseMeta; CAMPAIGN agent type
+- [x] `packages/outreach`: audience preview (only researched companies with a VALID verified email, not suppressed, not in another campaign, not emailed in the last 30 days), readiness check (offer, audience, mailbox health, reply reading, sequence, AI, outbound state, limits), launch enrolls the first cohort, `sweepCampaigns` (every minute) → `prepareStep` re-checks the prospect, drafts with the CAMPAIGN agent, runs validators, then `requestExternalAction` (AI_AGENT, idempotency key `campaign:{id}:enrollment:{id}:step:{n}`) — the Policy Engine decides; `settleCampaignAction` records sent/blocked/failed and schedules the next step
+- [x] CAMPAIGN agent: evidence-backed first touch + follow-ups (clarify value / new observation / close the loop); validators: no links, no prices, no fake compliments/urgency, one question, ≤ 90 words, every claim cites evidence, unsubscribe line present
+- [x] Stop rules: mailbox sync (every 2 min) classifies REPLY / AUTO_REPLY / UNSUBSCRIBE / BOUNCE; reply, unsubscribe and bounce stop the sequence and cancel pending sends; unsubscribe/bounce add a suppression; one-click unsubscribe (RFC 8058 `List-Unsubscribe` + public `/unsubscribe/[token]` page, CSRF-exempt + public, same answer for every token)
+- [x] Gmail: REST provider (send with stable Message-ID, thread headers, read inbox via history cursor), "Connect with Google" OAuth (PKCE, state, encrypted tokens, refresh); test mailbox (fake_email) for local use — needs `GOOGLE_OAUTH_CLIENT_ID/SECRET/REDIRECT_URL` + `ENCRYPTION_KEY` for the real one
+- [x] API: `GET/POST /campaigns`, `POST /campaigns/audience-preview`, `GET/PATCH /campaigns/:id`, `POST /campaigns/:id/check|preview|launch|enroll|pause|resume|complete|archive`, `GET /campaigns/:id/enrollments`, prospect remove/replied/unsubscribed, test-mailbox `simulate`, `GET|POST /public/unsubscribe/:token`, `GET /integrations/oauth/google/start|callback`
+- [x] Screens: Campaigns list (prospects, sent, replied, unsubscribed, needs approval — no open rates), New/Edit campaign (goal + offer, who with live audience count, sending, follow-ups, readiness checks), Campaign detail (funnel, live feed, email counts, prospects with every message and its status, preview emails dry-run, settings), Integrations → Connect with Google
+- [x] DoD tests + live run: launch → draft → approval (first touch) → send window WAIT → send → follow-up scheduled → reply stops the sequence; unsubscribe/bounce suppress; no double send on retry (idempotency); paused campaign/kill switch/suppression re-checked at execution
+- Fixed on the way: parallel research runs no longer abort on the shared Technology catalog (P2002)
+- Deferred by plan: Conversations / AI Inbox replies (Phase 12), A/B variants and send-time learning (Phase 18), mailbox warm-up/health scoring, "Build with AI" campaign creation, more mail providers (Outlook/SMTP)
+- After pulling: `pnpm install`, `pnpm db:deploy`
+- Note: integration tests share the dev database — stop the worker before `pnpm test`, otherwise its outbox dispatcher can pick up test rows
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

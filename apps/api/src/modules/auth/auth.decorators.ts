@@ -7,9 +7,16 @@ import type { AuthService } from './auth.service.js';
 export const IS_PUBLIC = Symbol('IS_PUBLIC');
 export const SKIP_WORKSPACE = Symbol('SKIP_WORKSPACE');
 export const REQUIRED_PERMISSIONS = Symbol('REQUIRED_PERMISSIONS');
+export const CSRF_EXEMPT = Symbol('CSRF_EXEMPT');
 
 /** No session needed (login, health). Everything else requires authentication by default — fail closed. */
 export const Public = () => SetMetadata(IS_PUBLIC, true);
+
+/**
+ * Skips the same-origin check. Only for public endpoints that use no cookie and are authorized by a secret in the URL
+ * — e.g. one-click unsubscribe (RFC 8058), which mail providers POST from their own servers.
+ */
+export const CsrfExempt = () => SetMetadata(CSRF_EXEMPT, true);
 
 /** Authenticated, but doesn't need a resolved workspace (e.g. listing your own sessions). */
 export const SkipWorkspace = () => SetMetadata(SKIP_WORKSPACE, true);

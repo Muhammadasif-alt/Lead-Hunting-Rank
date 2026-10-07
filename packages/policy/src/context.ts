@@ -96,10 +96,9 @@ const EMAIL_STATES = ['SUCCEEDED', 'EXECUTING', 'UNKNOWN_OUTCOME'] as const;
  */
 export async function buildPolicyContext(db: Db, workspaceId: string, req: PolicyRequest, now = new Date()): Promise<PolicyContext> {
   const def = actionDefinition(req.actionType);
-  const [workspace, rules] = await Promise.all([
-    db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { status: true, outboundState: true, autonomyLevel: true, defaultTimezone: true } }),
-    loadPolicySettings(db, workspaceId),
-  ]);
+  // Sequential: `db` is often the caller's transaction, which runs one query at a time.
+  const workspace = await db.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { status: true, outboundState: true, autonomyLevel: true, defaultTimezone: true } });
+  const rules = await loadPolicySettings(db, workspaceId);
   const timezone = isValidTimezone(workspace.defaultTimezone) ? workspace.defaultTimezone : 'UTC';
 
   let agent: AutonomyLevel | null = null;

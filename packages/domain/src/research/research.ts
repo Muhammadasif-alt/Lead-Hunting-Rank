@@ -418,10 +418,13 @@ class Researcher {
     const now = this.now();
     const detected = new Map<string, { name: string; category: string; evidence: Evidence }>();
     for (const p of pages) for (const t of p.analysis.technologies) if (!detected.has(t.key)) detected.set(t.key, { name: t.name, category: t.category, evidence: p.evidence });
+    // Technology is a global catalog shared by parallel research runs: insert-if-missing outside the transaction
+    // (ON CONFLICT DO NOTHING), so two runs spotting the same tech never abort each other with P2002.
+    if (detected.size) await this.db.technology.createMany({ data: [...detected].map(([key, t]) => ({ key, name: t.name, category: t.category })), skipDuplicates: true });
     await this.db.$transaction(async (tx) => {
       const seenIds: string[] = [];
       for (const [key, t] of detected) {
-        const tech = await tx.technology.upsert({ where: { key }, create: { key, name: t.name, category: t.category }, update: {} });
+        const tech = await tx.technology.findUniqueOrThrow({ where: { key } });
         seenIds.push(tech.id);
         await tx.companyTechnology.upsert({
           where: { workspaceId_companyId_technologyId: { workspaceId: this.run.workspaceId, companyId: company.id, technologyId: tech.id } },

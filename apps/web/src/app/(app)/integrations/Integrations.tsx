@@ -156,6 +156,20 @@ export function Integrations() {
     if (canRead) void load();
   }, [canRead, load]);
 
+  // Back from Google sign-in: show the outcome once, then clean the URL.
+  const [oauth, setOauth] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const result = q.get("oauth");
+    if (!result) return;
+    setOauth(
+      result === "connected"
+        ? { ok: true, text: `Gmail connected: ${q.get("account") ?? "mailbox"}` }
+        : { ok: false, text: `Gmail was not connected: ${q.get("reason") ?? "unknown error"}` },
+    );
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
   const screen = findScreen("/integrations");
   const live = (integrations ?? []).filter((i) => i.status !== "DISCONNECTED");
   const liveKeys = new Set(live.map((i) => i.provider));
@@ -186,6 +200,13 @@ export function Integrations() {
           {error && (
             <div className="card flex items-center gap-2 border-danger/30 bg-danger-soft px-4 py-3 text-sm text-danger">
               <CircleAlert className="size-4 shrink-0" /> {error}
+            </div>
+          )}
+          {oauth && (
+            <div
+              className={`card px-4 py-3 text-sm ${oauth.ok ? "border-brand/30 bg-brand-soft text-brand" : "border-danger/30 bg-danger-soft text-danger"}`}
+            >
+              {oauth.text}
             </div>
           )}
 
@@ -471,6 +492,12 @@ function AvailableCard({
     setBusy(true);
     setError(null);
     try {
+      if (p.connection === "OAUTH") {
+        // Google sign-in: the server creates a one-time state and sends the browser to Google's consent screen.
+        const { url } = await api<{ url: string }>("/integrations/oauth/google/start");
+        window.location.href = url;
+        return;
+      }
       await api(`/integrations/${p.key}/connect`, { method: "POST", body: "{}" });
       await onChange();
     } catch (err) {
@@ -501,10 +528,14 @@ function AvailableCard({
           className="btn btn-secondary mt-4 h-8 self-start"
         >
           {busy ? <Loader className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}{" "}
-          {reconnect ? "Reconnect" : "Connect"}
+          {p.connection === "OAUTH" ? "Connect with Google" : reconnect ? "Reconnect" : "Connect"}
         </button>
       )}
-      {!p.connectable && <span className="badge mt-4 self-start">Not available in this environment</span>}
+      {!p.connectable && (
+        <span className="badge mt-4 self-start">
+          {p.connection === "OAUTH" ? "Needs the Google OAuth keys in .env" : "Not available in this environment"}
+        </span>
+      )}
     </div>
   );
 }

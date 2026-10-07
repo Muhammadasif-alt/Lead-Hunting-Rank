@@ -42,7 +42,7 @@ test('payload hash ignores key order and undefined fields', () => {
 test('registry: past-tense names, unique consumers, routes only where intended', () => {
   const consumers = new Set<string>();
   for (const [type, def] of Object.entries(EVENTS)) {
-    assert.match(type, /^[A-Z][A-Za-z]+(Created|Updated|Added|Attached|Recorded|Conflicted|Superseded|Prepared|Queued|Succeeded|Failed|Blocked|Cancelled|Waiting|Expired|Review|Connected|Disconnected|Disabled|Enabled|Degraded|Limited|Recovered|Unavailable|Archived|Restored|Ended|Detected|Rejected|Merged|Started|Completed|Paused|Resumed|Discovered|Requested|Audited|Proposed|Invalidated|Verified|Assessed|Changed|Granted|Rejected|Expired|Lifted)$/, type);
+    assert.match(type, /^[A-Z][A-Za-z]+(Created|Updated|Added|Attached|Recorded|Conflicted|Superseded|Prepared|Queued|Succeeded|Failed|Blocked|Cancelled|Waiting|Expired|Review|Connected|Disconnected|Disabled|Enabled|Degraded|Limited|Recovered|Unavailable|Archived|Restored|Ended|Detected|Rejected|Merged|Started|Completed|Paused|Resumed|Discovered|Requested|Audited|Proposed|Invalidated|Verified|Assessed|Changed|Granted|Rejected|Expired|Lifted|Checked|Archived|Enrolled|Replied|Suppressed|Removed|Drafted|Received)$/, type);
     assert.ok(def.version >= 1);
     for (const r of def.routes) {
       assert.ok(!consumers.has(r.consumer), `duplicate consumer ${r.consumer}`);
@@ -50,7 +50,7 @@ test('registry: past-tense names, unique consumers, routes only where intended',
       assert.ok(!r.consumer.includes(':'), 'BullMQ job ids may not contain ":"');
     }
   }
-  assert.equal(EVENTS.ExternalActionQueued.routes.length, 1);
+  assert.equal(EVENTS.ExternalActionQueued.routes.filter((r) => r.job === 'external-action.execute').length, 1, 'queued → exactly one execution route');
   assert.equal(EVENTS.ExternalActionNeedsReview.routes.length, 0, 'needs-review must not loop back into execution');
   assert.equal(eventDefinition('toString'), undefined);
   assert.equal(eventDefinition('NoSuchEvent'), undefined);

@@ -19,6 +19,7 @@
     "@revenue-os/database": "workspace:*",
     "@revenue-os/domain": "workspace:*",
     "@revenue-os/events": "workspace:*",
+    "@revenue-os/outreach": "workspace:*",
     "@revenue-os/policy": "workspace:*",
     "@revenue-os/providers": "workspace:*",
     "@revenue-os/shared": "workspace:*",

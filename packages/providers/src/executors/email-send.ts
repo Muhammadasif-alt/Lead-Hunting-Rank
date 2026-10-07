@@ -9,11 +9,14 @@ export const EMAIL_SEND_ACTION = 'email.send';
 /** The frozen payload of an email.send action. */
 export const EmailSendPayload = z.strictObject({
   from: z.email(),
+  fromName: z.string().max(100).optional(),
   to: z.array(z.email()).min(1).max(50),
   subject: z.string().min(1).max(998),
   text: z.string().min(1).max(100_000),
   html: z.string().max(500_000).optional(),
   threadRef: z.string().max(500).optional(),
+  inReplyTo: z.string().max(500).optional(),
+  unsubscribeUrl: z.url().max(1000).optional(),
 });
 export type EmailSendPayload = z.output<typeof EmailSendPayload>;
 
@@ -39,12 +42,15 @@ export function createEmailSendExecutor(gateway: ProviderGateway): ActionExecuto
       const { value } = await gateway.call(request(action, 'send_message', 'EMAIL_SEND'), (email, options) =>
         email.sendMessage({ ...parsed.data, idempotencyKey: action.idempotencyKey }, options),
       );
-      return { providerRef: value.messageId };
+      // The thread and Message-ID let a follow-up continue the same conversation for the recipient.
+      const meta: Record<string, string> = { threadId: value.threadId };
+      if (value.internetMessageId) meta.internetMessageId = value.internetMessageId;
+      return { providerRef: value.messageId, meta };
     },
 
     async reconcile(action): Promise<ReconcileResult> {
       try {
-        const { value } = await gateway.call(request(action, 'find_sent', 'EMAIL_READ'), (email, options) => email.findSentByIdempotencyKey(action.idempotencyKey, options));
+        const { value } = await gateway.call(request(action, 'find_sent', 'EMAIL_READ'), (email, options) => email.findSentByIdempotencyKey(action.idempotencyKey, options, (action.payload as { from?: string }).from));
         return value ? { status: 'SUCCEEDED', providerRef: value.messageId } : { status: 'NOT_FOUND' };
       } catch {
         return { status: 'UNDETERMINED' }; // can't ask the provider right now — a human or the next sweep decides

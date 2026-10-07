@@ -18,6 +18,7 @@ import type { ServiceContext } from '../../domain/service-context.js';
 import { PrismaService } from '../../infra/prisma.service.js';
 import { SYSTEM_ACTOR, setupTestDatabase, uniqueSlug } from '../../testing/test-db.js';
 import { WorkspaceService } from '../identity/workspace.service.js';
+import { GoogleOAuthService } from './google-oauth.service.js';
 import { IntegrationService } from './integration.service.js';
 
 const SEND = { from: 'sales@agency.example', to: ['owner@lawns.example'], subject: 'Quick question', text: 'Hi there' };
@@ -51,7 +52,8 @@ describe('Phase 5 — provider gateway + integrations', () => {
     storage = await mkdtemp(join(tmpdir(), 'rhl-phase5-'));
     // No Redis: in-memory limiter/circuit and mailbox; same Prisma sinks as production wiring.
     runtime = createProviderRuntime(prisma.client, { appEnv: 'test', storagePath: storage });
-    service = new IntegrationService(prisma, { APP_ENV: 'test' } as AppConfig, runtime);
+    const cfg = { APP_ENV: 'test' } as AppConfig;
+    service = new IntegrationService(prisma, cfg, runtime, new GoogleOAuthService(prisma, cfg, runtime));
   });
 
   after(async () => {
@@ -63,7 +65,8 @@ describe('Phase 5 — provider gateway + integrations', () => {
     const catalog = service.catalog();
     assert.equal(catalog.find((p) => p.key === 'fake_email')?.connectable, true);
     assert.equal(catalog.find((p) => p.key === 'gmail')?.connectable, false);
-    const prod = new IntegrationService(prisma, { APP_ENV: 'production' } as AppConfig, runtime).catalog();
+    const prodCfg = { APP_ENV: 'production' } as AppConfig;
+    const prod = new IntegrationService(prisma, prodCfg, runtime, new GoogleOAuthService(prisma, prodCfg, runtime)).catalog();
     assert.equal(prod.find((p) => p.key === 'fake_email')?.connectable, false);
   });
 
@@ -82,7 +85,7 @@ describe('Phase 5 — provider gateway + integrations', () => {
     assert.equal(JSON.stringify(integration).includes('credentialRef'), false, 'no credential fields leave the API');
 
     await assert.rejects(service.connect(ctx, 'fake_email', {}), (e) => e instanceof ConflictError && e.code === 'ALREADY_EXISTS');
-    await assert.rejects(service.connect(ctx, 'gmail', {}), (e) => e instanceof ValidationError && /Phase 11/.test(e.message));
+    await assert.rejects(service.connect(ctx, 'gmail', {}), (e) => e instanceof ValidationError && /GOOGLE_OAUTH_CLIENT_ID/.test(e.message));
     await assert.rejects(service.connect(ctx, 'nope', {}), NotFoundError);
   });
 

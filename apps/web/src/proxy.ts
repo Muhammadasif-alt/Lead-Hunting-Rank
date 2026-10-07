@@ -10,7 +10,9 @@ const PUBLIC_PATHS = new Set(["/", "/login"]);
  */
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  if (PUBLIC_PATHS.has(pathname) || request.cookies.has(SESSION_COOKIE)) return NextResponse.next();
+  // Unsubscribe links in emails must work for anyone, without an account.
+  if (PUBLIC_PATHS.has(pathname) || pathname.startsWith("/unsubscribe/") || request.cookies.has(SESSION_COOKIE))
+    return NextResponse.next();
 
   const login = new URL("/login", request.nextUrl);
   login.searchParams.set("next", `${pathname}${search}`);

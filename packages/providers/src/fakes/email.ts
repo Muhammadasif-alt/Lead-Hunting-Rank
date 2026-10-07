@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { Redis } from 'ioredis';
 import { ProviderCallError } from '../core/errors.js';
+import { messageIdFor } from '../email/gmail.js';
 import type { CallOptions, CapabilityCheck, EmailChanges, EmailMessage, EmailProvider, SendEmailInput, SendEmailResult } from '../core/interfaces.js';
 import { FailureQueue, type FakeFailure } from './failures.js';
 
@@ -103,11 +104,28 @@ export class FakeEmailProvider implements EmailProvider {
       text: input.text,
       direction: 'OUTBOUND',
       occurredAt: new Date().toISOString(),
+      internetMessageId: messageIdFor(input.idempotencyKey, input.from),
     };
     await this.store.append(message, input.idempotencyKey);
     this.sends++;
     if (after === 'lost-response') FailureQueue.lost();
-    return { messageId: message.messageId, threadId: message.threadId, sentAt: message.occurredAt, units: 1 };
+    return { messageId: message.messageId, threadId: message.threadId, sentAt: message.occurredAt, internetMessageId: message.internetMessageId, units: 1 };
+  }
+
+  /** Test mailbox only: an email arrives (a reply, an auto-reply, a bounce) — mailbox sync will see it. */
+  async receive(input: { from: string; to: string[]; subject: string; text: string; threadId?: string }): Promise<EmailMessage> {
+    const message: EmailMessage = {
+      messageId: `fake-msg-${randomUUID()}`,
+      threadId: input.threadId ?? `fake-thread-${randomUUID()}`,
+      from: input.from.toLowerCase(),
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      direction: 'INBOUND',
+      occurredAt: new Date().toISOString(),
+    };
+    await this.store.append(message, null);
+    return message;
   }
 
   async findSentByIdempotencyKey(idempotencyKey: string, _options?: CallOptions): Promise<SendEmailResult | null> {

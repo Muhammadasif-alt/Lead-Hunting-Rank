@@ -199,6 +199,9 @@ importers:
       '@revenue-os/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@revenue-os/outreach':
+        specifier: workspace:*
+        version: link:../../packages/outreach
       '@revenue-os/policy':
         specifier: workspace:*
         version: link:../../packages/policy
@@ -300,6 +303,9 @@ importers:
       '@revenue-os/events':
         specifier: workspace:*
         version: link:../../packages/events
+      '@revenue-os/outreach':
+        specifier: workspace:*
+        version: link:../../packages/outreach
       '@revenue-os/policy':
         specifier: workspace:*
         version: link:../../packages/policy
@@ -425,6 +431,37 @@ importers:
       ioredis:
         specifier: ^6.0.0
         version: 6.0.0
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.19.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/outreach:
+    dependencies:
+      '@revenue-os/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@revenue-os/database':
+        specifier: workspace:*
+        version: link:../database
+      '@revenue-os/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@revenue-os/events':
+        specifier: workspace:*
+        version: link:../events
+      '@revenue-os/policy':
+        specifier: workspace:*
+        version: link:../policy
+      '@revenue-os/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@revenue-os/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^24

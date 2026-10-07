@@ -13,6 +13,10 @@ import { FakeVerificationProvider } from '../fakes/verification.js';
 import { FakeWebsiteProvider } from '../fakes/websites.js';
 import { ProviderGateway, type BindingResolver, type ProviderBinding } from '../gateway/gateway.js';
 import { MemoryProviderStateStore, RedisProviderStateStore } from '../gateway/state-store.js';
+import { CredentialStore } from '../credentials/secret.js';
+import { GmailProvider } from '../email/gmail.js';
+import { refreshGoogleToken, type GoogleTokens } from '../email/google-oauth.js';
+import { ProviderCallError } from '../core/errors.js';
 import { AnthropicProvider } from '../llm/anthropic.js';
 import { LocalStorageProvider } from '../storage/local.js';
 import { HttpWebsiteFetcher } from '../web/fetcher.js';
@@ -33,6 +37,26 @@ export interface AdapterFactoryOptions {
   prefix?: string;
   /** Server LLM configuration (LLM_PROVIDER / LLM_API_KEY). */
   llm?: { provider: string; apiKey?: string };
+  /** Encrypted per-integration credentials (OAuth tokens) and the Google OAuth client to refresh them. */
+  credentials?: { db: PrismaClient; encryptionKey?: string; google?: { clientId: string; clientSecret: string } };
+  fetch?: typeof fetch;
+}
+
+/** A fresh Gmail access token: refreshed (and re-stored, encrypted) a minute before it expires. */
+function gmailTokenSource(integrationId: string, creds: NonNullable<AdapterFactoryOptions['credentials']>, fetchFn?: typeof fetch) {
+  const store = new CredentialStore(creds.db, creds.encryptionKey);
+  let cached: GoogleTokens | null = null;
+  return async () => {
+    if (!creds.google) throw new ProviderCallError('AUTH_REQUIRED', 'Google OAuth is not configured on this server');
+    cached ??= await store.load<GoogleTokens>(integrationId);
+    if (!cached) throw new ProviderCallError('AUTH_REQUIRED', 'No credentials stored for this mailbox — reconnect it');
+    if (cached.expiresAt - Date.now() < 60_000) {
+      cached = await refreshGoogleToken(creds.google, cached, fetchFn);
+      const row = await creds.db.integration.findUnique({ where: { id: integrationId }, select: { workspaceId: true } });
+      if (row) await store.save(row.workspaceId, integrationId, cached);
+    }
+    return cached.accessToken;
+  };
 }
 
 /**
@@ -65,6 +89,8 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
         return new LocalStorageProvider(join(options.storagePath, integration.workspaceId));
       case 'web_fetcher':
         return new HttpWebsiteFetcher();
+      case 'gmail':
+        return options.credentials ? new GmailProvider({ getAccessToken: gmailTokenSource(integration.id, options.credentials, options.fetch), fetch: options.fetch }) : null;
       case 'anthropic':
         return options.llm?.provider === 'anthropic' && options.llm.apiKey ? new AnthropicProvider({ apiKey: options.llm.apiKey }) : null;
       default:
@@ -136,7 +162,7 @@ export function createProviderRuntime(
   db: PrismaClient,
   options: AdapterFactoryOptions & { logger?: { warn: (obj: object, msg: string) => void } },
 ): ProviderRuntime {
-  const factory = createAdapterFactory(options);
+  const factory = createAdapterFactory({ ...options, credentials: { db, ...options.credentials } });
   const gateway = new ProviderGateway({
     resolve: createIntegrationResolver(db, factory),
     store: options.redis ? new RedisProviderStateStore(options.redis, options.prefix ?? 'rhl') : new MemoryProviderStateStore(),

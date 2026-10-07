@@ -1,8 +1,11 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Query, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import { z } from 'zod';
 import { ZodValidationPipe } from '../../common/zod-validation.pipe.js';
 import { AccessService, type Access } from '../auth/access.service.js';
-import { CurrentAccess, RequirePermission } from '../auth/auth.decorators.js';
+import { RawResponse } from '../../common/envelope.interceptor.js';
+import { CurrentAccess, Public, RequirePermission } from '../auth/auth.decorators.js';
+import { GoogleOAuthService } from './google-oauth.service.js';
 import { IntegrationService } from './integration.service.js';
 
 const ConnectInput = z.strictObject({ name: z.string().trim().min(1).max(120).optional() });
@@ -15,7 +18,23 @@ export class IntegrationsController {
   constructor(
     private readonly integrations: IntegrationService,
     private readonly access: AccessService,
+    private readonly google: GoogleOAuthService,
   ) {}
+
+  /** Starts "Connect with Google" for Gmail: returns Google's consent URL for this workspace + user. */
+  @Get('oauth/google/start')
+  @RequirePermission('integration.manage')
+  googleStart(@CurrentAccess() access: Access) {
+    return this.google.start(this.access.serviceContext(access));
+  }
+
+  /** Google's redirect target. Public by necessity — the one-time state (bound to workspace + user) is the proof. */
+  @Get('oauth/google/callback')
+  @Public()
+  @RawResponse()
+  async googleCallback(@Query() q: Record<string, string | undefined>, @Res() res: Response) {
+    res.redirect(302, await this.google.callback({ state: q.state, code: q.code, error: q.error }));
+  }
 
   @Get()
   @RequirePermission('integration.read')

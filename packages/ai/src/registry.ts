@@ -13,6 +13,7 @@ export const TOOLS = {
   proposeAssessment: { category: 'PROPOSAL', description: 'Assess a company per dimension with reasons' },
   proposeContactRoute: { category: 'PROPOSAL', description: 'Recommend who to reach first and through which contact point' },
   proposeNextStep: { category: 'PROPOSAL', description: 'Recommend the next research step (recorded, not executed)' },
+  draftEmail: { category: 'PROPOSAL', description: 'Draft one outreach email for a prospect — sent only if the Policy Engine allows it' },
   requestResearch: { category: 'COMMAND', description: 'Ask for the company to be researched again' },
 } as const;
 export type ToolName = keyof typeof TOOLS;
@@ -33,8 +34,8 @@ export interface AgentDefaults {
 }
 
 /**
- * Agent registry (docs/08 §12-13, §132). Phase 9's agents only read and propose: no external messages, no meetings,
- * no pricing, no strategy changes — they cannot, because no such tool exists for them.
+ * Agent registry (docs/08 §12-13, §132). Agents only read and propose: no agent has a tool that sends, books or prices.
+ * The Campaign Agent drafts emails; whether one is sent is an external action the Policy Engine decides on.
  */
 export const AGENTS: Record<AgentType, AgentDefaults> = {
   RESEARCH: {
@@ -80,6 +81,17 @@ export const AGENTS: Record<AgentType, AgentDefaults> = {
     riskClass: 'LOW',
     label: 'Scoring Agent',
     purpose: 'Explains opportunity, contactability, data confidence and priority with reasons — not a magic number',
+  },
+  CAMPAIGN: {
+    version: 1,
+    modelClass: 'STANDARD',
+    allowedTools: ['readCompanyContext', 'draftEmail'],
+    dailyRunLimit: 500,
+    dailyCostLimitMinor: null,
+    timeoutMs: 90_000,
+    riskClass: 'MEDIUM',
+    label: 'Campaign Agent',
+    purpose: 'Writes short, evidence-backed outreach emails per prospect — it drafts; the Policy Engine decides whether they are sent',
   },
 };
 
