@@ -112,6 +112,7 @@ export const OUTCOME_LABEL: Record<PolicyOutcome, string> = {
 
 export const ACTION_LABEL: Record<string, string> = {
   "email.send": "Send email",
+  "email.reply": "Reply in a conversation",
   "diagnostics.fake_send": "Pipeline self-test",
 };
 

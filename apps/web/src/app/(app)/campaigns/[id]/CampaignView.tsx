@@ -491,6 +491,11 @@ function Prospects({
                 />
               </button>
               {e.statusReason && e.status !== "ACTIVE" && <p className="mt-1 text-xs text-muted">{e.statusReason}</p>}
+              {e.conversationId && (
+                <Link href={`/inbox?c=${e.conversationId}`} className="mt-1 inline-block text-xs font-medium text-accent hover:underline">
+                  Open the conversation in the inbox →
+                </Link>
+              )}
               {open === e.id && (
                 <div className="mt-3 space-y-3">
                   {e.messages.length === 0 ? (

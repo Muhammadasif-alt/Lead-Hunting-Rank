@@ -62,6 +62,9 @@ enum EntityType {
   CAMPAIGN_ENROLLMENT
   CAMPAIGN_MESSAGE
   MAILBOX_MESSAGE
+  CONVERSATION
+  CONVERSATION_MESSAGE
+  CONVERSATION_REPLY
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -73,24 +76,24 @@ enum WorkspaceStatus {
 }
 
 model Workspace {
-  id              String          @id @default(uuid()) @db.Uuid
-  name            String
-  slug            String          @unique
-  defaultTimezone String          @default("UTC")
-  currency        String          @default("USD") @db.Char(3)
-  language        String          @default("en")
-  status          WorkspaceStatus @default(ACTIVE)
+  id                String          @id @default(uuid()) @db.Uuid
+  name              String
+  slug              String          @unique
+  defaultTimezone   String          @default("UTC")
+  currency          String          @default("USD") @db.Char(3)
+  language          String          @default("en")
+  status            WorkspaceStatus @default(ACTIVE)
   /// Kill switch (docs/10 §93-102): PAUSED and EMERGENCY_STOP stop every outbound action; inbound and research continue.
-  outboundState     OutboundState @default(ACTIVE)
+  outboundState     OutboundState   @default(ACTIVE)
   outboundReason    String?
-  outboundChangedAt DateTime?     @db.Timestamptz(3)
-  outboundChangedBy String?       @db.Uuid
+  outboundChangedAt DateTime?       @db.Timestamptz(3)
+  outboundChangedBy String?         @db.Uuid
   /// Workspace preset (docs/10 §20-30). An agent may be set lower, never higher than this.
-  autonomyLevel     AutonomyLevel @default(L1)
-  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
-  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
-  archivedAt      DateTime?       @db.Timestamptz(3)
-  version         Int             @default(1)
+  autonomyLevel     AutonomyLevel   @default(L1)
+  createdAt         DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
+  archivedAt        DateTime?       @db.Timestamptz(3)
+  version           Int             @default(1)
 
   members                WorkspaceMember[]
   sessions               Session[]
@@ -148,6 +151,11 @@ model Workspace {
   mailboxCursors         MailboxCursor[]
   integrationCredentials IntegrationCredential[]
   oauthStates            OAuthState[]
+  conversations          Conversation[]
+  conversationMessages   ConversationMessage[]
+  messageClassifications MessageClassification[]
+  extractionCandidates   ExtractionCandidate[]
+  conversationReplies    ConversationReply[]
 }
 
 enum UserStatus {
@@ -1746,6 +1754,8 @@ enum AgentType {
   CONTACT
   SCORING
   CAMPAIGN
+  INBOX
+  CONVERSATION
 }
 
 /**
@@ -1753,24 +1763,24 @@ enum AgentType {
  * how much it may spend. The tool allowlist is enforced server-side, never by the prompt.
  */
 model AgentDefinition {
-  id                  String    @id @default(uuid()) @db.Uuid
-  workspaceId         String    @db.Uuid
+  id                  String         @id @default(uuid()) @db.Uuid
+  workspaceId         String         @db.Uuid
   agentType           AgentType
   version             Int
-  enabled             Boolean   @default(true)
+  enabled             Boolean        @default(true)
   modelClass          String
   allowedTools        String[]
-  maxConcurrency      Int       @default(4)
-  timeoutMs           Int       @default(60000)
+  maxConcurrency      Int            @default(4)
+  timeoutMs           Int            @default(60000)
   /// Runs per UTC day; null = unlimited.
   dailyRunLimit       Int?
   /// Cost per UTC day in minor units; null = unlimited. Unknown costs count as zero but are labelled unknown.
   dailyCostLimitMinor Int?
-  riskClass           String    @default("LOW")
+  riskClass           String         @default("LOW")
   /// null = the workspace level. A value above the workspace level is capped by the Policy Engine.
   autonomyLevel       AutonomyLevel?
-  createdAt           DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt           DateTime  @updatedAt @db.Timestamptz(3)
+  createdAt           DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt           DateTime       @updatedAt @db.Timestamptz(3)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
@@ -2230,7 +2240,9 @@ enum CampaignStepKind {
   FOLLOW_UP
 }
 
-/** One touch of the sequence. Before every step the prospect is re-checked — a follow-up never fires blindly. */
+/**
+ * One touch of the sequence. Before every step the prospect is re-checked — a follow-up never fires blindly.
+ */
 model CampaignStep {
   id          String           @id @default(uuid()) @db.Uuid
   workspaceId String           @db.Uuid
@@ -2314,7 +2326,9 @@ enum CampaignMessageStatus {
   FAILED
 }
 
-/** One drafted message for one step of one enrollment; sent only through its ExternalAction. */
+/**
+ * One drafted message for one step of one enrollment; sent only through its ExternalAction.
+ */
 model CampaignMessage {
   id                String                @id @default(uuid()) @db.Uuid
   workspaceId       String                @db.Uuid
@@ -2380,7 +2394,9 @@ model MailboxMessage {
   @@index([workspaceId, occurredAt])
 }
 
-/** Where mailbox sync continues (provider history cursor). */
+/**
+ * Where mailbox sync continues (provider history cursor).
+ */
 model MailboxCursor {
   integrationId String   @id @db.Uuid
   workspaceId   String   @db.Uuid
@@ -2408,7 +2424,9 @@ model IntegrationCredential {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 }
 
-/** One OAuth attempt: bound to workspace + user, short-lived, single use, PKCE (docs/12 §19-30 OAuth state protection). */
+/**
+ * One OAuth attempt: bound to workspace + user, short-lived, single use, PKCE (docs/12 §19-30 OAuth state protection).
+ */
 model OAuthState {
   id           String    @id @default(uuid()) @db.Uuid
   workspaceId  String    @db.Uuid
@@ -2421,4 +2439,261 @@ model OAuthState {
   createdAt    DateTime  @default(now()) @db.Timestamptz(3)
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Conversations + AI Inbox (Phase 12) ─────────────────────────────
+
+/// docs/09 + screen #5 §48: where the relationship stands. Qualification stages arrive with Phase 13.
+enum ConversationStage {
+  REPLIED
+  ENGAGED
+  MEETING_REQUESTED
+  NURTURE
+  CLOSED
+  SUPPRESSED
+}
+
+/// screen #5 §15: AUTO sends within policy · ASSIST drafts for a person · HUMAN = AI never replies (suggestions only).
+enum ConversationMode {
+  AUTO
+  ASSIST
+  HUMAN
+}
+
+/// docs/17 §77-86 inbox categories — derived by rules from stage, intent and who has to act, never by the AI.
+enum InboxCategory {
+  HIGH_INTENT
+  NEEDS_HUMAN
+  AI_HANDLING
+  MEETING
+  NURTURE
+  CLOSED
+}
+
+enum WaitingOn {
+  US
+  PROSPECT
+  NOBODY
+}
+
+/**
+ * One relationship thread with one prospect (screen #5). Always tied to a company we know — unknown senders stay in
+ * mailbox sync as UNMATCHED. One conversation per mailbox thread (duplicate prevention); the cold sequence that led
+ * here is linked, and stopped the moment a genuine reply arrived.
+ */
+model Conversation {
+  id                   String            @id @default(uuid()) @db.Uuid
+  workspaceId          String            @db.Uuid
+  companyId            String            @db.Uuid
+  personId             String?           @db.Uuid
+  /// The prospect's address (normalized).
+  email                String
+  contactName          String?
+  mailboxIntegrationId String            @db.Uuid
+  threadRef            String?
+  subject              String
+  campaignId           String?           @db.Uuid
+  enrollmentId         String?           @db.Uuid
+  stage                ConversationStage @default(REPLIED)
+  mode                 ConversationMode  @default(ASSIST)
+  category             InboxCategory     @default(AI_HANDLING)
+  waitingOn            WaitingOn         @default(US)
+  /// Higher = act sooner. Intent + human requirement + risk; waiting time is added when listing.
+  priority             Int               @default(0)
+  priorityReasons      String[]
+  needsHuman           Boolean           @default(false)
+  escalationReason     String?
+  primaryIntent        String?
+  sentiment            String?
+  /// The latest short summary ("catch me up").
+  summary              String?
+  nextAction           String?
+  /// Structured context from the conversation (need, timeline, budget, referral, return date…) — each value with the
+  /// message it came from. History lives in ExtractionCandidate; the latest statement wins.
+  context              Json              @default("{}")
+  assignedToId         String?           @db.Uuid
+  takenOverById        String?           @db.Uuid
+  takenOverAt          DateTime?         @db.Timestamptz(3)
+  snoozedUntil         DateTime?         @db.Timestamptz(3)
+  resolvedAt           DateTime?         @db.Timestamptz(3)
+  lastInboundAt        DateTime?         @db.Timestamptz(3)
+  lastOutboundAt       DateTime?         @db.Timestamptz(3)
+  lastMessageAt        DateTime          @default(now()) @db.Timestamptz(3)
+  lastReadAt           DateTime?         @db.Timestamptz(3)
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+  version              Int               @default(1)
+
+  workspace       Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  messages        ConversationMessage[]
+  classifications MessageClassification[]
+  extractions     ExtractionCandidate[]
+  replies         ConversationReply[]
+
+  @@unique([workspaceId, id])
+  @@unique([mailboxIntegrationId, threadRef])
+  @@index([workspaceId, category, priority])
+  @@index([workspaceId, lastMessageAt])
+  @@index([workspaceId, email])
+  @@index([workspaceId, companyId])
+}
+
+enum MessageDirection {
+  INBOUND
+  OUTBOUND
+  INTERNAL
+}
+
+enum MessageAuthor {
+  PROSPECT
+  AI
+  HUMAN
+  SYSTEM
+}
+
+/**
+ * One message in a conversation: an email in either direction, or an internal note (never sent, screen #5 §43).
+ * Inbound rows come from mailbox sync (deduplicated there); outbound rows from a sent campaign step or a sent reply.
+ */
+model ConversationMessage {
+  id                String           @id @default(uuid()) @db.Uuid
+  workspaceId       String           @db.Uuid
+  conversationId    String           @db.Uuid
+  direction         MessageDirection
+  author            MessageAuthor
+  authorUserId      String?          @db.Uuid
+  fromEmail         String?
+  toEmails          String[]
+  subject           String           @default("")
+  /// What the person wrote (quoted history cut off).
+  text              String
+  /// The mailbox kind for inbound (REPLY, AUTO_REPLY, UNSUBSCRIBE).
+  kind              String?
+  mailboxMessageId  String?          @unique @db.Uuid
+  campaignMessageId String?          @unique @db.Uuid
+  replyId           String?          @unique @db.Uuid
+  internetMessageId String?
+  occurredAt        DateTime         @db.Timestamptz(3)
+  createdAt         DateTime         @default(now()) @db.Timestamptz(3)
+
+  workspace      Workspace              @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  conversation   Conversation           @relation(fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Cascade)
+  classification MessageClassification?
+
+  @@unique([workspaceId, id])
+  @@index([conversationId, occurredAt])
+}
+
+/**
+ * What an inbound message means (screen #5 §6-7): a primary intent plus secondary ones, tone, the questions and
+ * objections in it, and whether a person must look. RULES = deterministic (unsubscribe, auto-reply); AI = Inbox Agent.
+ */
+model MessageClassification {
+  id               String          @id @default(uuid()) @db.Uuid
+  workspaceId      String          @db.Uuid
+  conversationId   String          @db.Uuid
+  messageId        String          @unique @db.Uuid
+  primaryIntent    String
+  secondaryIntents String[]
+  sentiment        String
+  questions        String[]
+  /// [{ type, text }]
+  objections       Json            @default("[]")
+  riskFlags        String[]
+  needsHuman       Boolean         @default(false)
+  confidence       ConfidenceLevel
+  summary          String          @default("")
+  method           String
+  agentTaskId      String?         @db.Uuid
+  createdAt        DateTime        @default(now()) @db.Timestamptz(3)
+
+  workspace    Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  conversation Conversation        @relation(fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Cascade)
+  message      ConversationMessage @relation(fields: [workspaceId, messageId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, messageId])
+  @@index([workspaceId, primaryIntent, createdAt])
+}
+
+enum ExtractionStatus {
+  APPLIED
+  SUPERSEDED
+  REJECTED
+}
+
+/**
+ * A fact the prospect stated (screen #5 §23, §30-32): field, value and the exact words it came from (provenance).
+ * Only quotes found verbatim in the message are kept. A newer statement supersedes an older one; history stays.
+ */
+model ExtractionCandidate {
+  id             String           @id @default(uuid()) @db.Uuid
+  workspaceId    String           @db.Uuid
+  conversationId String           @db.Uuid
+  messageId      String           @db.Uuid
+  field          String
+  value          String
+  quote          String
+  confidence     ConfidenceLevel
+  status         ExtractionStatus @default(APPLIED)
+  decidedById    String?          @db.Uuid
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime         @updatedAt @db.Timestamptz(3)
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  conversation Conversation @relation(fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([conversationId, field, createdAt])
+}
+
+enum ReplyStatus {
+  DRAFT
+  REJECTED
+  PENDING_APPROVAL
+  WAITING
+  QUEUED
+  SENT
+  BLOCKED
+  CANCELLED
+  FAILED
+  DISCARDED
+  SUPERSEDED
+}
+
+/**
+ * A reply in a conversation: an AI draft (with its grounding — what it answered from approved knowledge and what it
+ * could not), or what a person wrote. Sent only through its ExternalAction (email.reply), which the Policy Engine
+ * decides on and the worker revalidates — a takeover or a newer message makes an AI reply obsolete.
+ */
+model ConversationReply {
+  id                 String           @id @default(uuid()) @db.Uuid
+  workspaceId        String           @db.Uuid
+  conversationId     String           @db.Uuid
+  /// The inbound message this answers (a newer one makes an unsent AI draft obsolete).
+  inReplyToMessageId String?          @db.Uuid
+  author             MessageAuthor
+  authorUserId       String?          @db.Uuid
+  agentTaskId        String?          @db.Uuid
+  subject            String
+  body               String
+  /// [{ question, answer, source }] and the questions it could not answer from approved knowledge.
+  answered           Json             @default("[]")
+  unanswered         String[]
+  claims             Json             @default("[]")
+  /// [{ validator, ok, detail }]
+  validation         Json             @default("[]")
+  confidence         ConfidenceLevel?
+  status             ReplyStatus
+  statusReason       String?
+  externalActionId   String?          @unique @db.Uuid
+  /// 👍/👎 + why (screen #5 §46) — controlled learning data, never auto-applied.
+  feedback           Json?
+  sentAt             DateTime?        @db.Timestamptz(3)
+  createdAt          DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
+
+  workspace    Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  conversation Conversation @relation(fields: [workspaceId, conversationId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, id])
+  @@index([conversationId, createdAt])
 }

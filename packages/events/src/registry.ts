@@ -98,6 +98,23 @@ export interface EventPayloads {
   EnrollmentRemoved: { enrollmentId: string; campaignId: string; reason: string };
   CampaignMessageDrafted: { messageId: string; enrollmentId: string; campaignId: string; position: number; decision: string };
   MailboxMessageReceived: { mailboxMessageId: string; integrationId: string; kind: string; enrollmentId: string | null };
+  // conversations (docs/17 §77-86) — ids and labels only, never message text
+  ConversationStarted: { conversationId: string; companyId: string; campaignId: string | null; enrollmentId: string | null };
+  /** An inbound message joined the conversation; the cold sequence was already stopped in the same transaction. */
+  ConversationMessageReceived: { conversationId: string; messageId: string; kind: string };
+  ConversationMessageClassified: { conversationId: string; messageId: string; primaryIntent: string; method: string; needsHuman: boolean };
+  /** A person must act (pricing, risk, unclear, AI unavailable, snooze ended…). */
+  ConversationEscalated: { conversationId: string; reason: string };
+  ConversationReplyDrafted: { conversationId: string; replyId: string; author: string; status: string };
+  ConversationReplySent: { conversationId: string; replyId: string; externalActionId: string; author: string };
+  ConversationModeChanged: { conversationId: string; from: string; to: string; takeover: boolean; cancelledReplies: number };
+  ConversationResolved: { conversationId: string; reason: string | null };
+  ConversationReopened: { conversationId: string };
+  ConversationSnoozed: { conversationId: string; until: string };
+  ConversationAssigned: { conversationId: string; assignedToId: string | null };
+  ConversationNoteAdded: { conversationId: string; messageId: string };
+  /** A stated fact was rejected by a person (applied facts are part of ConversationMessageClassified). */
+  ConversationContextCorrected: { conversationId: string; extractionId: string; field: string };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -161,7 +178,8 @@ export type AggregateType =
   | 'CAMPAIGN'
   | 'CAMPAIGN_ENROLLMENT'
   | 'CAMPAIGN_MESSAGE'
-  | 'MAILBOX_MESSAGE';
+  | 'MAILBOX_MESSAGE'
+  | 'CONVERSATION';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -188,7 +206,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -240,6 +258,15 @@ const campaignActionSettled: EventRoute = {
   toJobData: (e) => ({ externalActionId: e.aggregateId, schemaVersion: 1 }),
 };
 const settles = (consumer: string): EventRoute => ({ ...campaignActionSettled, consumer: `campaign.action-${consumer}` });
+
+/** A prospect is waiting: classifying and answering their message runs ahead of background AI work. */
+const processConversationMessage: EventRoute = {
+  consumer: 'conversation.process-message',
+  queue: QUEUES.ai,
+  job: JOBS.conversationProcess,
+  priority: PRIORITY.HIGH,
+  toJobData: (e) => ({ conversationId: e.aggregateId, messageId: e.payload.messageId, schemaVersion: 1 }),
+};
 
 const entity = (owner: EventDefinition['owner'], aggregateType: AggregateType, description: string, pii: 'none' | 'low' = 'none'): EventDefinition => ({
   version: 1,
@@ -317,6 +344,22 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   EnrollmentRemoved: entity('campaigns', 'CAMPAIGN_ENROLLMENT', 'A person removed the prospect from the campaign'),
   CampaignMessageDrafted: entity('campaigns', 'CAMPAIGN_MESSAGE', 'The Campaign Agent drafted a message; the Policy Engine decided on it'),
   MailboxMessageReceived: entity('campaigns', 'MAILBOX_MESSAGE', 'Mailbox sync saw an inbound email (reply, auto-reply, unsubscribe or bounce)', 'low'),
+  ConversationStarted: entity('conversations', 'CONVERSATION', 'A prospect replied and a conversation began (the cold sequence stopped)'),
+  ConversationMessageReceived: {
+    ...entity('conversations', 'CONVERSATION', 'An inbound message joined a conversation'),
+    routes: [processConversationMessage],
+  },
+  ConversationMessageClassified: entity('conversations', 'CONVERSATION', 'The message was read: intents, questions, objections, stated facts'),
+  ConversationEscalated: entity('conversations', 'CONVERSATION', 'A person must act on this conversation'),
+  ConversationReplyDrafted: entity('conversations', 'CONVERSATION', 'A reply was drafted (by the AI or a person)'),
+  ConversationReplySent: entity('conversations', 'CONVERSATION', 'A reply was sent through its external action'),
+  ConversationModeChanged: entity('conversations', 'CONVERSATION', 'AUTO / ASSIST / HUMAN changed (a takeover cancels pending AI replies)'),
+  ConversationResolved: entity('conversations', 'CONVERSATION', 'A person marked the conversation resolved'),
+  ConversationReopened: entity('conversations', 'CONVERSATION', 'A resolved conversation was reopened'),
+  ConversationSnoozed: entity('conversations', 'CONVERSATION', 'The conversation was snoozed until a date'),
+  ConversationAssigned: entity('conversations', 'CONVERSATION', 'The conversation was assigned to a person (or unassigned)'),
+  ConversationNoteAdded: entity('conversations', 'CONVERSATION', 'An internal note was added (never sent to the prospect)'),
+  ConversationContextCorrected: entity('conversations', 'CONVERSATION', 'A person rejected a fact taken from the conversation'),
   OutboundStateChanged: entity('policy', 'WORKSPACE', 'Outbound was paused, emergency-stopped or resumed (kill switch)'),
   PolicyUpdated: entity('policy', 'WORKSPACE', 'The autonomy level or a configurable rule changed (new policy version)'),
   SuppressionAdded: entity('policy', 'SUPPRESSION', 'A contact, domain, person or company was put on the do-not-contact list'),

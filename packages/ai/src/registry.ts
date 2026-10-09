@@ -14,6 +14,8 @@ export const TOOLS = {
   proposeContactRoute: { category: 'PROPOSAL', description: 'Recommend who to reach first and through which contact point' },
   proposeNextStep: { category: 'PROPOSAL', description: 'Recommend the next research step (recorded, not executed)' },
   draftEmail: { category: 'PROPOSAL', description: 'Draft one outreach email for a prospect — sent only if the Policy Engine allows it' },
+  classifyMessage: { category: 'ANALYSIS', description: 'Read an inbound email: intents, questions, objections, risk and stated facts with quotes' },
+  draftReply: { category: 'PROPOSAL', description: 'Draft a grounded reply in a conversation — sent only if the Policy Engine allows it' },
   requestResearch: { category: 'COMMAND', description: 'Ask for the company to be researched again' },
 } as const;
 export type ToolName = keyof typeof TOOLS;
@@ -35,7 +37,8 @@ export interface AgentDefaults {
 
 /**
  * Agent registry (docs/08 §12-13, §132). Agents only read and propose: no agent has a tool that sends, books or prices.
- * The Campaign Agent drafts emails; whether one is sent is an external action the Policy Engine decides on.
+ * The Campaign Agent drafts emails and the Conversation Agent drafts replies; whether one is sent is an external action
+ * the Policy Engine decides on. The Inbox Agent only reads.
  */
 export const AGENTS: Record<AgentType, AgentDefaults> = {
   RESEARCH: {
@@ -92,6 +95,28 @@ export const AGENTS: Record<AgentType, AgentDefaults> = {
     riskClass: 'MEDIUM',
     label: 'Campaign Agent',
     purpose: 'Writes short, evidence-backed outreach emails per prospect — it drafts; the Policy Engine decides whether they are sent',
+  },
+  INBOX: {
+    version: 1,
+    modelClass: 'FAST',
+    allowedTools: ['readCompanyContext', 'classifyMessage'],
+    dailyRunLimit: 2000,
+    dailyCostLimitMinor: null,
+    timeoutMs: 60_000,
+    riskClass: 'LOW',
+    label: 'Inbox Agent',
+    purpose: 'Reads every reply: intents, questions, objections, risk and the facts the prospect states — with the exact words',
+  },
+  CONVERSATION: {
+    version: 1,
+    modelClass: 'STANDARD',
+    allowedTools: ['readCompanyContext', 'draftReply'],
+    dailyRunLimit: 500,
+    dailyCostLimitMinor: null,
+    timeoutMs: 90_000,
+    riskClass: 'MEDIUM',
+    label: 'Conversation Agent',
+    purpose: 'Drafts grounded replies — answers only from approved knowledge and hands the rest to a person; the Policy Engine decides whether they are sent',
   },
 };
 

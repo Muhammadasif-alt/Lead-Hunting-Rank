@@ -6,3 +6,10 @@ export * from './campaigns.js';
 export * from './engine.js';
 export * from './inbound.js';
 export * from './preview.js';
+// Conversations + AI Inbox (Phase 12, docs/17 §77-86, screen #5): a reply joins its conversation in the same
+// transaction that stops the cold sequence → Inbox Agent reads it → rules decide category/stage → Conversation Agent
+// drafts → Policy Engine (email.reply) → sent, or a person takes it.
+export * from './conversation-commands.js';
+export * from './conversation-engine.js';
+export * from './conversation-inbound.js';
+export * from './conversation-rules.js';

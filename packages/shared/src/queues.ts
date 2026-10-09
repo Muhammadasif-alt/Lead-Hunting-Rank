@@ -51,6 +51,10 @@ export const JOBS = {
   campaignActionSettled: 'campaign.action.settled',
   /** Periodic: read new inbound mail of connected mailboxes — replies, unsubscribes, bounces. */
   mailboxSync: 'mailbox.sync',
+  /** One inbound message in a conversation: classify → structured context → draft / reply / escalate. Payload: ConversationJobData. */
+  conversationProcess: 'conversation.message.process',
+  /** Periodic: snoozed conversations whose time has come are brought back to a person. */
+  conversationSweep: 'conversation.sweep',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -112,6 +116,13 @@ export interface CampaignStepJobData extends JobTracing {
   workspaceId: string;
   enrollmentId: string;
   position: number;
+  schemaVersion: 1;
+}
+
+export interface ConversationJobData extends JobTracing {
+  workspaceId: string;
+  conversationId: string;
+  messageId: string;
   schemaVersion: 1;
 }
 

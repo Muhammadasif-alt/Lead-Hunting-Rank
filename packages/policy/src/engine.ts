@@ -16,7 +16,9 @@ export function effectiveAutonomy(a: PolicyContext['autonomy']): AutonomyLevel {
  * The autonomy an AI needs to send on its own (docs/10 §20-30): L2 sends routine follow-ups, L3 also first outreach.
  * L0–L1 never send on their own — a person approves each message.
  */
-export function requiredAutonomy(firstTouch: boolean): AutonomyLevel {
+export function requiredAutonomy(firstTouch: boolean, conversational = false): AutonomyLevel {
+  // Routine conversations are L3 work (docs/10 §20-30) — below that every AI reply is approved by a person.
+  if (conversational) return 'L3';
   return firstTouch ? 'L3' : 'L2';
 }
 
@@ -76,11 +78,11 @@ export function evaluate(req: PolicyRequest, ctx: PolicyContext): PolicyResult {
   const askRules: string[] = [];
   if (isAi && def.outbound) {
     const level = effectiveAutonomy(ctx.autonomy);
-    if (rank(level) < rank(requiredAutonomy(ctx.firstTouch))) {
+    if (rank(level) < rank(requiredAutonomy(ctx.firstTouch, def.conversational))) {
       asks.push('AUTONOMY_TOO_LOW');
       askRules.push(`AUTONOMY:${level}`);
     }
-    if (ctx.firstTouch && ctx.settings.firstTouchApproval) {
+    if (!def.conversational && ctx.firstTouch && ctx.settings.firstTouchApproval) {
       asks.push('FIRST_TOUCH_REQUIRES_APPROVAL');
       askRules.push('FIRST_TOUCH_APPROVAL');
     }
@@ -112,14 +114,16 @@ export function evaluate(req: PolicyRequest, ctx: PolicyContext): PolicyResult {
       rules.push('PROVIDER_HEALTH');
       later(new Date(now.getTime() + 15 * 60_000));
     }
+    // A reply answers someone who wrote to us: the cold-outreach volume and cool-down caps don't hold it back.
+    const cold = !def.conversational;
     const limit = ctx.settings.dailySendLimit;
-    if (limit !== null && ctx.sentToday + ctx.recipients.length > limit) {
+    if (cold && limit !== null && ctx.sentToday + ctx.recipients.length > limit) {
       waits.push('DAILY_LIMIT_REACHED');
       rules.push('DAILY_SEND_LIMIT');
       later(nextLocalMidnight(now, ctx.timezone));
     }
     const cooldown = ctx.settings.contactCooldownDays;
-    if (cooldown > 0 && ctx.lastContactAt) {
+    if (cold && cooldown > 0 && ctx.lastContactAt) {
       const until = new Date(new Date(ctx.lastContactAt).getTime() + cooldown * DAY_MS);
       if (until > now) {
         waits.push('FREQUENCY_CAP');
@@ -127,8 +131,10 @@ export function evaluate(req: PolicyRequest, ctx: PolicyContext): PolicyResult {
         later(until);
       }
     }
+    // Sending hours hold the AI back; a person who presses Send on a reply means now.
     const window = ctx.settings.sendWindow;
-    if (window.enabled && (waits.length || !inSendWindow(now, ctx.timezone, window))) {
+    const windowApplies = window.enabled && (cold || isAi);
+    if (windowApplies && (waits.length || !inSendWindow(now, ctx.timezone, window))) {
       const start = nextWindowStart(resumeAt, ctx.timezone, window);
       if (!start) return result('BLOCK', ['OUTSIDE_SEND_WINDOW'], ['SEND_WINDOW'], risk); // a window with no open hours
       if (!inSendWindow(now, ctx.timezone, window)) {

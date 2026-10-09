@@ -22,7 +22,7 @@ export function contextHash(ctx: PolicyContext): string {
 
 /** Recipient emails of an outbound action, normalized. */
 export function recipientsOf(actionType: string, payload: Record<string, unknown>): string[] {
-  if (actionType !== 'email.send') return [];
+  if (actionType !== 'email.send' && actionType !== 'email.reply') return [];
   const to = Array.isArray(payload.to) ? payload.to : typeof payload.to === 'string' ? [payload.to] : [];
   return [...new Set(to.map((v) => (typeof v === 'string' ? normalizeEmail(v) : null)).filter((v): v is string => !!v))];
 }

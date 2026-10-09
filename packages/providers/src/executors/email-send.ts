@@ -5,6 +5,8 @@ import type { ProviderGateway } from '../gateway/gateway.js';
 
 /** ExternalAction type for one outbound email. Campaigns (Phase 11) and replies (Phase 12) request these through the Policy Engine. */
 export const EMAIL_SEND_ACTION = 'email.send';
+/** A reply inside a conversation (Phase 12). Same payload and executor; the Policy Engine treats it differently. */
+export const EMAIL_REPLY_ACTION = 'email.reply';
 
 /** The frozen payload of an email.send action. */
 export const EmailSendPayload = z.strictObject({

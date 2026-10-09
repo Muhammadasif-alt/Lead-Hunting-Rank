@@ -16,9 +16,19 @@ import {
   type JobHandler,
 } from '@revenue-os/events/runtime';
 import { FAKE_SEND_ACTION, FakeSideEffectProvider, RedisFakeProviderStore } from '@revenue-os/events/testing';
-import { prepareStep, settleCampaignAction, sweepCampaigns, syncAllMailboxes, withCampaignGuard } from '@revenue-os/outreach';
+import {
+  prepareStep,
+  processConversationMessage,
+  settleCampaignAction,
+  settleConversationReply,
+  sweepCampaigns,
+  syncAllMailboxes,
+  wakeSnoozedConversations,
+  withCampaignGuard,
+  withConversationGuard,
+} from '@revenue-os/outreach';
 import { createPolicyRevalidator, policySweep } from '@revenue-os/policy';
-import { createEmailSendExecutor, EMAIL_SEND_ACTION } from '@revenue-os/providers';
+import { createEmailSendExecutor, EMAIL_REPLY_ACTION, EMAIL_SEND_ACTION } from '@revenue-os/providers';
 import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
 import {
   describeError,
@@ -29,6 +39,7 @@ import {
   type DiagnosticsPingResult,
   type AiCompanyJobData,
   type CampaignStepJobData,
+  type ConversationJobData,
   type DiscoveryAdvanceJobData,
   type ResearchRunJobData,
 } from '@revenue-os/shared';
@@ -60,16 +71,19 @@ const providers = createProviderRuntime(db, {
 
 // Side-effect adapters by action type. Each one calls its capability through the gateway, never a vendor directly.
 // The diagnostics fake backs the pipeline self-test and never runs in production.
+const emailExecutor = createEmailSendExecutor(providers.gateway);
 const executors: Record<string, ActionExecutor> = {
-  [EMAIL_SEND_ACTION]: createEmailSendExecutor(providers.gateway),
+  [EMAIL_SEND_ACTION]: emailExecutor,
+  [EMAIL_REPLY_ACTION]: emailExecutor,
 };
 if (config.APP_ENV !== 'production') {
   executors[FAKE_SEND_ACTION] = new FakeSideEffectProvider(new RedisFakeProviderStore(connection, prefix), 150);
 }
 // Policy Engine (Phase 10): right before every provider call the action is decided again on current truth — kill switch,
 // suppression, the requester's permission/autonomy, the approval. Anything but ACT stops the call.
-// Campaign emails also check their campaign (active? prospect still in the sequence?) first.
-const actions = externalActionHandlers(db, { executors, revalidate: withCampaignGuard(createPolicyRevalidator()) });
+// Campaign emails also check their campaign (active? prospect still in the sequence?) first; conversation replies check
+// the conversation (taken over? a newer message? unsubscribed?).
+const actions = externalActionHandlers(db, { executors, revalidate: withConversationGuard(withCampaignGuard(createPolicyRevalidator())) });
 
 const policySweepJob: JobHandler = {
   timeoutMs: 60_000,
@@ -96,14 +110,28 @@ const campaignPrepare: JobHandler = {
   timeoutMs: 3 * 60_000,
   handle: async (data) => ({ outcome: await prepareStep(outreach, data as unknown as CampaignStepJobData) }),
 };
+// Every outbound action that changes state: campaign messages and conversation replies follow (others are ignored).
 const campaignSettled: JobHandler = {
   timeoutMs: 30_000,
-  handle: async (data) => ({ outcome: await settleCampaignAction(db, (data as unknown as { externalActionId: string }).externalActionId) }),
+  handle: async (data) => {
+    const { externalActionId } = data as unknown as { externalActionId: string };
+    return { outcome: await settleCampaignAction(db, externalActionId), reply: await settleConversationReply(db, externalActionId) };
+  },
 };
 // Replies, unsubscribes and bounces stop the sequence; polling the mailbox is how we notice them.
 const mailboxSync: JobHandler = {
   timeoutMs: 3 * 60_000,
   handle: async () => ({ mailboxes: await syncAllMailboxes(db, providers.gateway) }),
+};
+
+// Conversations (Phase 12): a prospect is waiting — read the message, update the context, draft / reply / escalate.
+const conversationProcess: JobHandler = {
+  timeoutMs: 4 * 60_000,
+  handle: async (data) => ({ outcome: await processConversationMessage(outreach, data as unknown as ConversationJobData) }),
+};
+const conversationSweep: JobHandler = {
+  timeoutMs: 60_000,
+  handle: async () => wakeSnoozedConversations(db),
 };
 
 const providerHealthCheck: JobHandler = {
@@ -187,6 +215,7 @@ const workers = [
       [JOBS.discoverySweep]: discoverySweep,
       [JOBS.policySweep]: policySweepJob,
       [JOBS.campaignSweep]: campaignSweep,
+      [JOBS.conversationSweep]: conversationSweep,
     },
   }),
   createQueueWorker({
@@ -217,7 +246,7 @@ const workers = [
     logger,
     metrics,
     concurrency: 2,
-    handlers: { [JOBS.aiCompanyIntelligence]: aiCompanyIntelligence, [JOBS.campaignPrepareStep]: campaignPrepare },
+    handlers: { [JOBS.aiCompanyIntelligence]: aiCompanyIntelligence, [JOBS.campaignPrepareStep]: campaignPrepare, [JOBS.conversationProcess]: conversationProcess },
   }),
   createQueueWorker({
     queue: QUEUES.outbound,
@@ -295,6 +324,10 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('campaign-sweep', { every: 60_000 }, { name: JOBS.campaignSweep, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register campaign sweep schedule'));
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('conversation-sweep', { every: 5 * 60_000 }, { name: JOBS.conversationSweep, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register conversation sweep schedule'));
 producer
   .queue(QUEUES.inbound)
   .upsertJobScheduler('mailbox-sync', { every: 2 * 60_000 }, { name: JOBS.mailboxSync, data: { correlationId: 'scheduler' } })

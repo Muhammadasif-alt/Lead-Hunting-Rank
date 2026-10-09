@@ -150,3 +150,33 @@ test('time helpers respect the time zone', () => {
   assert.equal(nextLocalMidnight(new Date('2026-01-06T11:00:00Z'), 'Asia/Karachi').toISOString(), '2026-01-06T19:00:00.000Z');
   assert.equal(nextWindowStart(new Date('2026-01-06T11:00:00Z'), 'UTC', { ...w, days: [] }), null);
 });
+
+// ── Phase 12: replies in a conversation (email.reply) ──
+
+const reply: PolicyRequest = { ...human, actionType: 'email.reply' };
+const aiReply: PolicyRequest = { ...reply, actor: { type: 'AI_AGENT', id: null, agentType: 'CONVERSATION' } };
+
+test('a reply is not cold outreach: no first-touch approval, cool-down or daily cap — and a person may reply at night', () => {
+  const busy = { firstTouch: true, lastContactAt: '2026-01-06T10:00:00.000Z', sentToday: 10_000, settings: { ...DEFAULT_POLICY_SETTINGS, contactCooldownDays: 3, dailySendLimit: 50 } };
+  assert.equal(evaluate(reply, ctx(busy)).decision, 'ACT');
+  assert.equal(evaluate(reply, ctx({ ...busy, now: '2026-01-06T02:00:00.000Z' })).decision, 'ACT');
+  assert.equal(evaluate(aiReply, ctx({ ...busy, autonomy: { workspace: 'L3', agent: null, agentEnabled: true } })).decision, 'ACT');
+});
+
+test('AI replies need L3 (below that a person approves), keep to sending hours, and only the Conversation Agent may send them', () => {
+  const r = evaluate(aiReply, ctx({ firstTouch: false, autonomy: { workspace: 'L2', agent: null, agentEnabled: true } }));
+  assert.equal(r.decision, 'ASK');
+  assert.deepEqual(r.reasonCodes, ['AUTONOMY_TOO_LOW']);
+  assert.equal(requiredAutonomy(false, true), 'L3');
+  const night = evaluate(aiReply, ctx({ now: '2026-01-06T02:00:00.000Z', autonomy: { workspace: 'L3', agent: null, agentEnabled: true } }));
+  assert.equal(night.decision, 'WAIT');
+  assert.ok(night.reasonCodes.includes('OUTSIDE_SEND_WINDOW'));
+  assert.deepEqual(evaluate({ ...aiReply, actor: { type: 'AI_AGENT', id: null, agentType: 'CAMPAIGN' } }, ctx()).reasonCodes, ['AI_NOT_AUTHORIZED']);
+  assert.deepEqual(evaluate({ ...ai, actor: { type: 'AI_AGENT', id: null, agentType: 'CONVERSATION' } }, ctx()).reasonCodes, ['AI_NOT_AUTHORIZED']);
+});
+
+test('suppression and the kill switch still stop replies', () => {
+  assert.deepEqual(evaluate(reply, ctx({ suppressions: [{ id: 's', scope: 'EMAIL', reason: 'UNSUBSCRIBED' }] })).reasonCodes, ['SUPPRESSED_CONTACT']);
+  assert.deepEqual(evaluate(aiReply, ctx({ outboundState: 'EMERGENCY_STOP' })).reasonCodes, ['GLOBAL_EMERGENCY_STOP']);
+  assert.equal(evaluate(reply, ctx({ outboundState: 'PAUSED' })).decision, 'WAIT');
+});

@@ -66,7 +66,7 @@ describe('prompts and tools', () => {
 
   test('least privilege: an agent cannot use a tool outside its allowlist; none can send or book', () => {
     assert.throws(() => assertToolAllowed({ agentType: 'CONTACT', allowedTools: AGENTS.CONTACT.allowedTools }, 'proposeHypothesis'), ToolNotAllowedError);
-    // Only READ and PROPOSAL tools: drafting an email is a proposal — sending is an external action the Policy Engine decides.
-    for (const a of Object.values(AGENTS)) assert.ok(a.allowedTools.every((t) => TOOLS[t].category === 'READ' || TOOLS[t].category === 'PROPOSAL'), `${a.label} may only read and propose`);
+    // Only READ, ANALYSIS and PROPOSAL tools: drafting an email or a reply is a proposal — sending is an external action the Policy Engine decides.
+    for (const a of Object.values(AGENTS)) assert.ok(a.allowedTools.every((t) => ['READ', 'ANALYSIS', 'PROPOSAL'].includes(TOOLS[t].category)), `${a.label} may only read and propose`);
   });
 });

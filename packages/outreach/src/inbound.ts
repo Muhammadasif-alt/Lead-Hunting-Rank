@@ -3,8 +3,9 @@ import { writeAudit, type ServiceContext, type Tx } from '@revenue-os/domain';
 import { recordEvent } from '@revenue-os/events';
 import { addSuppression } from '@revenue-os/policy';
 import type { EmailMessage, ProviderGateway } from '@revenue-os/providers';
-import { normalizeEmail } from '@revenue-os/shared';
+import { normalizeEmail, parseReturnDate } from '@revenue-os/shared';
 import { cancelPendingMessages, LIVE_ENROLLMENT } from './campaigns.js';
+import { attachInboundTx, resolveKnownSender } from './conversation-inbound.js';
 import { recordReplyTx } from './engine.js';
 
 const system = (workspaceId: string): ServiceContext => ({ workspaceId, actor: { type: 'SYSTEM', id: null } });
@@ -54,13 +55,23 @@ async function matchEnrollment(db: PrismaClient, workspaceId: string, integratio
   return db.campaignEnrollment.findFirst({ where: { ...scope, email: from, lastSentAt: { not: null } }, orderBy: { lastSentAt: 'desc' } });
 }
 
-/** Applies one inbound email. Deduplicated per mailbox — seeing the same message twice does nothing the second time. */
-export async function applyInbound(db: PrismaClient, integration: { id: string; workspaceId: string }, m: EmailMessage): Promise<{ kind: MailboxMessageKind; enrollmentId: string | null } | null> {
+/**
+ * Applies one inbound email. Deduplicated per mailbox — seeing the same message twice does nothing the second time.
+ * Stop rules first, then the message joins its conversation (Phase 12) — all in one transaction, so no follow-up can
+ * slip out between a reply arriving and the AI reading it.
+ */
+export async function applyInbound(
+  db: PrismaClient,
+  integration: { id: string; workspaceId: string; accountRef?: string | null },
+  m: EmailMessage,
+): Promise<{ kind: MailboxMessageKind; enrollmentId: string | null; conversationId: string | null } | null> {
   if (m.direction !== 'INBOUND') return null;
   const ctx = system(integration.workspaceId);
   const kind0 = classifyInbound(m);
   const e = await matchEnrollment(db, integration.workspaceId, integration.id, m, kind0);
-  const kind: MailboxMessageKind = e || kind0 === 'BOUNCE' ? kind0 : 'UNMATCHED';
+  // Not a campaign prospect: maybe someone we already talk to, or a contact we hold.
+  const known = !e && kind0 !== 'BOUNCE' ? await resolveKnownSender(db, integration.workspaceId, integration.id, m) : null;
+  const kind: MailboxMessageKind = e || known || kind0 === 'BOUNCE' ? kind0 : 'UNMATCHED';
 
   return db.$transaction(async (tx) => {
     const { count } = await tx.mailboxMessage.createMany({
@@ -91,10 +102,19 @@ export async function applyInbound(db: PrismaClient, integration: { id: string; 
       else if (kind === 'BOUNCE') {
         if (e.contactPointId) await tx.contactPoint.updateMany({ where: { id: e.contactPointId, workspaceId: e.workspaceId }, data: { status: 'INVALID', version: { increment: 1 } } });
         await suppressTx(tx, ctx, e, 'BOUNCE_POLICY', 'BOUNCE', 'The email bounced');
+      } else if (kind === 'AUTO_REPLY' && e.status === 'ACTIVE') {
+        // Away until a stated date: the next step waits until the day after they are back (screen #5 §8). No date → unchanged.
+        const back = parseReturnDate(`${m.subject}\n${m.text}`, new Date(m.occurredAt));
+        const resume = back ? new Date(new Date(`${back}T09:00:00.000Z`).getTime() + 86_400_000) : null;
+        if (resume) await tx.campaignEnrollment.updateMany({ where: { id: e.id, status: 'ACTIVE', nextStepDueAt: { lt: resume } }, data: { nextStepDueAt: resume, statusReason: `Out of office until ${back}` } });
       }
     }
     await recordEvent(tx, ctx, 'MailboxMessageReceived', row.id, { mailboxMessageId: row.id, integrationId: integration.id, kind, enrollmentId: e?.id ?? null });
-    return { kind, enrollmentId: e?.id ?? null };
+    const attached =
+      kind === 'REPLY' || kind === 'UNSUBSCRIBE' || kind === 'AUTO_REPLY'
+        ? await attachInboundTx(tx, ctx, { integration, message: m, row, kind, text: ownText(m.text), enrollment: e, known })
+        : null;
+    return { kind, enrollmentId: e?.id ?? null, conversationId: attached?.conversationId ?? null };
   });
 }
 
@@ -151,7 +171,7 @@ export async function markUnsubscribed(db: PrismaClient, ctx: ServiceContext, en
  * Mailbox sync (job mailbox.sync, docs/11 §61): new inbound mail since the stored cursor → applyInbound. Polling and a
  * future webhook may both see a message; the unique (mailbox, provider message id) makes that harmless.
  */
-export async function syncMailbox(db: PrismaClient, providers: ProviderGateway, integration: { id: string; workspaceId: string }, maxPages = 5) {
+export async function syncMailbox(db: PrismaClient, providers: ProviderGateway, integration: { id: string; workspaceId: string; accountRef?: string | null }, maxPages = 5) {
   let cursor = (await db.mailboxCursor.findUnique({ where: { integrationId: integration.id } }))?.cursor ?? null;
   let seen = 0;
   const kinds: Record<string, number> = {};
@@ -172,12 +192,14 @@ export async function syncMailbox(db: PrismaClient, providers: ProviderGateway, 
   return { seen, kinds };
 }
 
-/** Every mailbox a live (or recently ended) campaign sends from. */
+/** Every mailbox a live (or recently ended) campaign sends from, and every mailbox with an open conversation. */
 export async function syncAllMailboxes(db: PrismaClient, providers: ProviderGateway) {
   const campaigns = await db.campaign.findMany({ where: { status: { in: ['ACTIVE', 'PAUSED', 'COMPLETED', 'BLOCKED'] }, mailboxIntegrationId: { not: null } }, select: { mailboxIntegrationId: true }, distinct: ['mailboxIntegrationId'] });
+  const talking = await db.conversation.findMany({ where: { category: { not: 'CLOSED' } }, select: { mailboxIntegrationId: true }, distinct: ['mailboxIntegrationId'] });
+  const ids = [...new Set([...campaigns.map((c) => c.mailboxIntegrationId!), ...talking.map((c) => c.mailboxIntegrationId)])];
   const mailboxes = await db.integration.findMany({
-    where: { id: { in: campaigns.map((c) => c.mailboxIntegrationId!) }, capabilities: { has: 'EMAIL_READ' }, status: { notIn: ['DISABLED', 'DISCONNECTED', 'CONNECTING'] } },
-    select: { id: true, workspaceId: true },
+    where: { id: { in: ids }, capabilities: { has: 'EMAIL_READ' }, status: { notIn: ['DISABLED', 'DISCONNECTED', 'CONNECTING'] } },
+    select: { id: true, workspaceId: true, accountRef: true },
   });
   const results: { integrationId: string; seen?: number; error?: string }[] = [];
   for (const mb of mailboxes) {

@@ -46,6 +46,13 @@ const SCENARIOS: Scenario[] = [
     request: { actionType: 'email.send', actor: { type: 'AI_AGENT', id: null, agentType: 'CAMPAIGN' } },
     context: { approval: { id: 'a', status: 'APPROVED', fingerprint: 'old', expiresAt: '2026-01-07T11:00:00.000Z' } },
   },
+  {
+    key: 'ai_reply',
+    label: 'AI answers a prospect who replied',
+    request: { actionType: 'email.reply', actor: { type: 'AI_AGENT', id: null, agentType: 'CONVERSATION' } },
+    context: { firstTouch: false, lastContactAt: '2026-01-05T11:00:00.000Z' },
+  },
+  { key: 'human_reply_night', label: 'Salesperson replies at 02:00', request: { actionType: 'email.reply', actor: { type: 'HUMAN', id: 'user' } }, context: { now: '2026-01-06T02:00:00.000Z', firstTouch: false } },
   { key: 'night', label: 'Salesperson email at 02:00', request: { actionType: 'email.send', actor: { type: 'HUMAN', id: 'user' } }, context: { now: '2026-01-06T02:00:00.000Z' } },
   { key: 'daily_limit', label: 'Daily limit already used up', request: { actionType: 'email.send', actor: { type: 'HUMAN', id: 'user' } }, context: { sentToday: 10_000 } },
   { key: 'paused', label: 'Outbound paused', request: { actionType: 'email.send', actor: { type: 'HUMAN', id: 'user' } }, context: { outboundState: 'PAUSED' } },

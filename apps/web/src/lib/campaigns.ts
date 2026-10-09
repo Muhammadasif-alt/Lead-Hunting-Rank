@@ -119,6 +119,8 @@ export interface EnrollmentRow {
   lastSentAt: string | null;
   repliedAt: string | null;
   enrolledAt: string;
+  /** The inbox conversation once they replied (Phase 12). */
+  conversationId: string | null;
   messages: {
     id: string;
     position: number;

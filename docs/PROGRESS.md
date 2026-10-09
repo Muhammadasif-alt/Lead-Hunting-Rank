@@ -19,7 +19,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 9 | AI Runtime + Agents | ✅ done 2026-10-06 |
 | 10 | Policy Engine | ✅ done 2026-10-06 |
 | 11 | Campaigns + Outreach | ✅ done 2026-10-07 |
-| 12 … 24 | Inbox → … → Production + autonomy rollout | ⬜ |
+| 12 | Conversations + AI Inbox | ✅ done 2026-10-09 |
+| 13 … 24 | Qualification + Opportunities → … → Production + autonomy rollout | ⬜ |
 
 Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy Engine, §67-76 Phase 11 Campaigns, … §147-155 Phase 24). The short list in docs/17 §1 has no separate policy phase, so its later numbers are one lower.
 
@@ -173,6 +174,22 @@ Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy E
 - Deferred by plan: Conversations / AI Inbox replies (Phase 12), A/B variants and send-time learning (Phase 18), mailbox warm-up/health scoring, "Build with AI" campaign creation, more mail providers (Outlook/SMTP)
 - After pulling: `pnpm install`, `pnpm db:deploy`
 - Note: integration tests share the dev database — stop the worker before `pnpm test`, otherwise its outbox dispatcher can pick up test rows
+
+## Phase 12 — Definition of Done
+- [x] Schema: Conversation (stage REPLIED → ENGAGED → MEETING_REQUESTED, NURTURE / CLOSED / SUPPRESSED; mode AUTO / ASSIST / HUMAN; inbox category; whose turn; priority with reasons; escalation; structured context; takeover, snooze, assignee; one per mailbox thread), ConversationMessage (inbound / outbound / internal note; deduplicated by mailbox message, campaign message and reply), MessageClassification (primary + secondary intents, tone, questions, objections, risk flags, method RULES / AI), ExtractionCandidate (field, value, exact quote; latest supersedes, history kept), ConversationReply (AI draft with answered / unanswered questions, claims and validation, or a person's reply; sent only through its ExternalAction); agent types INBOX + CONVERSATION
+- [x] Inbound pipeline (in mailbox sync's transaction): identify sender (campaign prospect, same thread, open conversation, or a contact we hold — unknown senders stay unmatched) → immediate protection (a genuine reply stops every live cold sequence to that address, an unsubscribe suppresses it) → conversation (with the cold emails that led to it) → event → job conversation.message.process (ai queue, high priority)
+- [x] Classification: rules for unsubscribes and away messages (no AI discretion); the Inbox Agent for everything a person wrote — 13 intents incl. multi-intent, questions/objections/facts verbatim (provenance validator); deterministic safety net (risk words, pricing, meetings, referrals, unclear → a person) whatever the model says; AI unavailable → rules + a person
+- [x] Rules decide (never the model): stage, category (High intent / Needs you / Meeting / Waiting–AI / Nurture / Closed), priority (intent + human requirement + risk + waiting time), next action; not now → snoozed to the stated date, woken back to a person by conversation.sweep; out of office → the cold follow-up waits until after the return date
+- [x] Conversation Agent: grounded replies — answers only from approved knowledge (the offer, company context, thread), lists what it can't answer and asks a person; validators: every question handled, no prices / discounts / promises / links / invented contacts, ≤ 150 words, ≤ 2 questions, evidence for observations, right name. Failed draft → REJECTED, nothing requested, escalated
+- [x] Policy: new action email.reply — no first-touch, cool-down or daily cap (they wrote to us); suppression, kill switch, permission apply; AI replies need L3 (below: approval) and sending hours; only the Conversation Agent may send them. New conversations start in AUTO at L3+, else ASSIST. AUTO never auto-sends sensitive, uncertain or incomplete answers
+- [x] Take Over (one action): mode HUMAN cancels every pending AI reply + its approval in one transaction; the execution guard re-checks mode, newer messages and unsubscribes right before sending; Return to AI keeps the person's messages as context
+- [x] API: GET /conversations (category, search, mine; counts, waiting on us), GET /conversations/:id (thread, classifications, replies with approval ids, context + fact history, timeline, next action), POST :id/mode | takeover | reply | suggest | notes | resolve | reopen | snooze | assign | do-not-contact | read | simulate (test mailbox), replies/:id/discard | feedback, facts/:id/reject
+- [x] Screen: AI Inbox — three panels (list by priority with category tabs + search | thread with AI draft, checks, approve & send, edit, internal notes, mode switch, Take Over, snooze/resolve/do-not-contact, test-mailbox simulator | next action, what they said, what we know with quotes, company + campaign, what happened). Works at 390px. Campaign prospects link to their conversation
+- [x] DoD tests + live run: reply stops cold outreach → classified → context updated → AI draft → person edits and sends (ASSIST); AUTO sends at L3, asks at L1, escalates pricing; Take Over cancels pending AI replies and blocks a queued one at execution; unsubscribe suppresses; newer message supersedes a draft; ungrounded draft rejected; snooze wakes; known contact without campaign lands in the inbox, unknown sender doesn't
+- Fixed on the way: sentence splitting no longer breaks inside email addresses
+- Deferred by plan: Knowledge Base answers + pricing engine (Phase 15 / pricing policy), meeting booking (Phase 14), opportunities from conversations (Phase 13), natural-language search, catch-me-up digest, SLA notifications, multi-channel
+- After pulling: pnpm install, pnpm db:deploy, rebuild (pnpm build)
+- Note: the full pnpm test can time out the Phase 4 e2e suite on a low-RAM machine; it passes on its own (node --test apps/api/dist/modules/system/phase4.pipeline.e2e.test.js)
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

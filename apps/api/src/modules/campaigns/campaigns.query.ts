@@ -94,6 +94,7 @@ export class CampaignsQuery {
       include: { messages: { orderBy: { position: 'asc' }, select: { id: true, position: true, status: true, statusReason: true, subject: true, body: true, claims: true, sentAt: true, externalActionId: true } } },
     });
     const companies = await db.company.findMany({ where: { workspaceId, id: { in: rows.map((r) => r.companyId) } }, select: { id: true, displayName: true } });
+    const conversations = await db.conversation.findMany({ where: { workspaceId, enrollmentId: { in: rows.map((r) => r.id) } }, select: { id: true, enrollmentId: true } });
     return rows.map((r) => ({
       id: r.id,
       company: { id: r.companyId, name: companies.find((x) => x.id === r.companyId)?.displayName ?? null },
@@ -108,6 +109,7 @@ export class CampaignsQuery {
       repliedAt: r.repliedAt,
       enrolledAt: r.enrolledAt,
       messages: r.messages,
+      conversationId: conversations.find((x) => x.enrollmentId === r.id)?.id ?? null,
     }));
   }
 }

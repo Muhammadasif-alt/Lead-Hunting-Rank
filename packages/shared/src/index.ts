@@ -9,3 +9,4 @@ export * from './entity-resolution.js';
 export * from './discovery.js';
 export * from './research.js';
 export * from './policy.js';
+export * from './conversations.js';
