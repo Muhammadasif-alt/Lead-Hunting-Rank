@@ -75,6 +75,18 @@ describe('FakeCalendarProvider', () => {
     assert.equal(cancelled.status, 'CANCELLED');
     assert.notEqual(cancelled.etag, ev.etag);
   });
+  test('moves an event only onto free time; a change made in the calendar itself is visible (for reconciliation)', async () => {
+    const cal = new FakeCalendarProvider();
+    const busy = await cal.getBusy('primary', range, o());
+    const ev = await cal.createEvent({ calendarId: 'primary', title: 'Intro', attendees: ['p@x.example'], idempotencyKey: 'm2', start: '2026-10-05T18:00:00.000Z', end: '2026-10-05T18:30:00.000Z', videoLink: true }, o());
+    assert.match(ev.meetingUrl ?? '', /^https:\/\/meet\.test-calendar\.example\//);
+    await assert.rejects(cal.updateEvent('primary', ev.eventId, busy[0]!, o()), (e) => e instanceof ProviderCallError && e.kind === 'INVALID_REQUEST');
+    // Moving within its own time (30 minutes later, overlapping itself) is fine.
+    const moved = await cal.updateEvent('primary', ev.eventId, { start: '2026-10-05T18:15:00.000Z', end: '2026-10-05T18:45:00.000Z' }, o());
+    assert.equal(moved.start, '2026-10-05T18:15:00.000Z');
+    await cal.externalChange(ev.eventId, { cancel: true });
+    assert.equal((await cal.getEvent('primary', ev.eventId))?.status, 'CANCELLED');
+  });
 });
 
 describe('Fake lead sources', () => {

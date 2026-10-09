@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Check, CircleAlert, CircleCheck, Compass, History, Loader, MessageSquare, Pencil, Plus, Quote, RotateCcw, ShieldAlert, Trophy, Users, X, XCircle } from "lucide-react";
+import { ArrowLeft, CalendarDays, Check, CircleAlert, CircleCheck, Compass, History, Loader, MessageSquare, Pencil, Plus, Quote, RotateCcw, ShieldAlert, Trophy, Users, X, XCircle } from "lucide-react";
 import {
   DEAL_HEALTH_INFO,
   LOSS_REASON_INFO,
   LOSS_REASONS,
+  MEETING_OUTCOME_INFO,
+  MEETING_STATUS_INFO,
   QUALIFICATION_INFO,
   STAGE_SEMANTIC_INFO,
   STAKEHOLDER_ROLE_INFO,
@@ -178,6 +180,17 @@ export function OpportunityView({ id }: { id: string }) {
         <div className="min-w-0 space-y-4">
           <NextAction d={d} canEdit={canEdit} busy={busy} onSave={(text) => void run("next", () => patch(`/opportunities/${id}`, { nextActionOverride: text, version: o.version }))} />
           <Health d={d} />
+          <Meetings
+            d={d}
+            canBook={can("meeting.book") && open}
+            busy={busy}
+            onArrange={() =>
+              void run("meeting", async () => {
+                const r = await post<{ id: string }>("/meetings/propose", { opportunityId: id });
+                window.location.href = `/meetings/${r.id}`;
+              })
+            }
+          />
           <Qualification
             d={d}
             canEdit={can("opportunity.update")}
@@ -591,6 +604,48 @@ function Stakeholders({ d, canEdit, onAdd, onUpdate, onRemove }: { d: Opportunit
             </button>
           </div>
         </div>
+      )}
+    </section>
+  );
+}
+
+/** Meeting journey (screen #8 §35): every meeting of the deal with its outcome; arrange the next one from real availability. */
+function Meetings({ d, canBook, busy, onArrange }: { d: OpportunityDetail; canBook: boolean; busy: string | null; onArrange: () => void }) {
+  const arranging = d.meetings.some((m) => m.status === "PROPOSED" || m.status === "PENDING_CONFIRMATION");
+  return (
+    <section className="card p-4" data-tone="sales">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="eyebrow flex items-center gap-1.5 text-[11px]">
+          <CalendarDays className="size-3.5" /> Meetings
+        </div>
+        {canBook && !arranging && (
+          <button type="button" className="btn btn-secondary h-8 text-xs" disabled={!!busy} onClick={onArrange}>
+            {busy === "meeting" ? <Loader className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />} Book a meeting
+          </button>
+        )}
+      </div>
+      {d.meetings.length === 0 ? (
+        <p className="text-xs text-muted">No meetings yet. Booking finds genuinely free times in the calendar and sends the invite only when the calendar confirms.</p>
+      ) : (
+        <ol className="space-y-1.5">
+          {d.meetings.map((m) => {
+            const at = m.startAt ?? m.pendingStartAt;
+            return (
+              <li key={m.id}>
+                <Link href={`/meetings/${m.id}`} className="flex items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-xs hover:border-line-strong">
+                  <span className="min-w-0">
+                    <span className="block truncate font-medium">{m.typeName}</span>
+                    {m.nextStep && <span className="block truncate text-muted">Next: {m.nextStep}</span>}
+                  </span>
+                  <span className="shrink-0 text-right text-muted">
+                    {at ? new Date(at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "No time yet"}
+                    <span className="block">{m.outcome ? MEETING_OUTCOME_INFO[m.outcome].label : MEETING_STATUS_INFO[m.status].label}</span>
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ol>
       )}
     </section>
   );

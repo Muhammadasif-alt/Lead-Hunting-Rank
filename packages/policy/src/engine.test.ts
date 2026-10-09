@@ -180,3 +180,25 @@ test('suppression and the kill switch still stop replies', () => {
   assert.deepEqual(evaluate(aiReply, ctx({ outboundState: 'EMERGENCY_STOP' })).reasonCodes, ['GLOBAL_EMERGENCY_STOP']);
   assert.equal(evaluate(reply, ctx({ outboundState: 'PAUSED' })).decision, 'WAIT');
 });
+
+// ── Phase 14: meetings ──
+
+const book: PolicyRequest = { ...human, actionType: 'calendar.book', payload: { attendees: ['owner@prospect.example'] } };
+const aiBook: PolicyRequest = { ...book, actor: { type: 'AI_AGENT', id: null, agentType: 'SCHEDULING' } };
+
+test('booking a meeting: needs meeting.book, respects suppression and the kill switch, no cold caps', () => {
+  assert.deepEqual(evaluate(book, ctx()).reasonCodes, ['INSUFFICIENT_PERMISSION']);
+  const sales = ctx({ actorPermissions: ['meeting.book'], sentToday: 10_000, lastContactAt: NOW });
+  assert.equal(evaluate(book, sales).decision, 'ACT');
+  assert.deepEqual(evaluate(book, { ...sales, suppressions: [{ id: 's', scope: 'EMAIL', reason: 'UNSUBSCRIBED' }] }).reasonCodes, ['SUPPRESSED_CONTACT']);
+  assert.equal(evaluate(book, { ...sales, outboundState: 'EMERGENCY_STOP' }).decision, 'BLOCK');
+});
+
+test('the Scheduling Agent books only at L3 (below: a person approves); other agents may not book; cancelling works even in an emergency stop', () => {
+  assert.deepEqual(evaluate(aiBook, ctx({ autonomy: { workspace: 'L1', agent: null, agentEnabled: true } })).reasonCodes, ['AUTONOMY_TOO_LOW']);
+  assert.equal(evaluate(aiBook, ctx({ autonomy: { workspace: 'L3', agent: null, agentEnabled: true } })).decision, 'ACT');
+  assert.deepEqual(evaluate({ ...aiBook, actor: { type: 'AI_AGENT', id: null, agentType: 'CONVERSATION' } }, ctx({ autonomy: { workspace: 'L4', agent: null, agentEnabled: true } })).reasonCodes, ['AI_NOT_AUTHORIZED']);
+  const cancel: PolicyRequest = { ...human, actionType: 'calendar.cancel', payload: { eventId: 'e1' } };
+  assert.equal(evaluate(cancel, ctx({ actorPermissions: ['meeting.book'], outboundState: 'EMERGENCY_STOP' })).decision, 'ACT');
+  assert.equal(evaluate({ ...cancel, actor: { type: 'AI_AGENT', id: null, agentType: 'SCHEDULING' } }, ctx({ autonomy: { workspace: 'L4', agent: null, agentEnabled: true } })).decision, 'BLOCK');
+});

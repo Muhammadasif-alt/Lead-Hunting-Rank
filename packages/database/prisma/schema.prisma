@@ -66,6 +66,8 @@ enum EntityType {
   CONVERSATION_MESSAGE
   CONVERSATION_REPLY
   OPPORTUNITY
+  MEETING
+  MEETING_TYPE
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -163,6 +165,13 @@ model Workspace {
   opportunityLosses      OpportunityLoss[]
   qualifications         Qualification[]
   qualificationAnswers   QualificationAnswer[]
+  meetingTypes           MeetingType[]
+  schedulingProfiles     SchedulingProfile[]
+  meetings               Meeting[]
+  meetingAttendees       MeetingAttendee[]
+  meetingBriefs          MeetingBrief[]
+  meetingOutcomes        MeetingOutcome[]
+  meetingChanges         MeetingChange[]
 }
 
 enum UserStatus {
@@ -1765,6 +1774,7 @@ enum AgentType {
   CAMPAIGN
   INBOX
   CONVERSATION
+  SCHEDULING
 }
 
 /**
@@ -2457,6 +2467,7 @@ enum ConversationStage {
   REPLIED
   ENGAGED
   MEETING_REQUESTED
+  MEETING_BOOKED
   NURTURE
   CLOSED
   SUPPRESSED
@@ -2942,4 +2953,270 @@ model QualificationAnswer {
   qualification Qualification @relation(fields: [workspaceId, qualificationId], references: [workspaceId, id], onDelete: Cascade)
 
   @@index([qualificationId, key, supersededAt])
+}
+
+// ───────────────────────────── Calendar + Meetings (Phase 14) ─────────────────────────────
+
+/// docs/09 §59-64. PROPOSED = meeting intent with real slots found; PENDING_CONFIRMATION = times offered to the prospect,
+/// or a booking waiting on the calendar / an approval; BOOKED only after the calendar confirmed (or a person recorded a
+/// meeting booked elsewhere). RESCHEDULING keeps the confirmed time until the new one is confirmed.
+enum MeetingStatus {
+  PROPOSED
+  PENDING_CONFIRMATION
+  BOOKED
+  RESCHEDULING
+  COMPLETED
+  NO_SHOW
+  CANCELLED
+}
+
+/// What a meeting type needs from the deal before it may be booked (screen #8 §9) — protects the team's calendars.
+enum MeetingQualificationRule {
+  NONE
+  NEED
+  QUALIFIED
+}
+
+/// screen #8 §28. NO_SHOW is recorded as an outcome too, so the meeting journey reads the same everywhere.
+enum MeetingOutcomeType {
+  ADVANCED
+  NO_CHANGE
+  FOLLOW_UP
+  NURTURE
+  DISQUALIFIED
+  LOST
+  NO_SHOW
+}
+
+/**
+ * Admin-configurable meeting types (screen #8 §2): duration, buffer, what the deal must show first, whether the AI may
+ * book it, and whether a brief is prepared.
+ */
+model MeetingType {
+  id                    String                   @id @default(uuid()) @db.Uuid
+  workspaceId           String                   @db.Uuid
+  key                   String
+  name                  String
+  description           String?
+  durationMinutes       Int
+  bufferMinutes         Int                      @default(15)
+  requiredQualification MeetingQualificationRule @default(NONE)
+  aiBookingAllowed      Boolean                  @default(true)
+  briefEnabled          Boolean                  @default(true)
+  /// VIDEO / PHONE / IN_PERSON
+  locationType          String                   @default("VIDEO")
+  active                Boolean                  @default(true)
+  position              Int                      @default(0)
+  createdAt             DateTime                 @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime                 @updatedAt @db.Timestamptz(3)
+  version               Int                      @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  meetings  Meeting[]
+
+  @@unique([workspaceId, key])
+  @@unique([workspaceId, id])
+}
+
+/**
+ * One team member's bookable time (screen #8 §5, §41): local working days and meeting hours, lunch, buffer, daily cap,
+ * minimum notice, and which calendar is checked. Availability itself is always read fresh from that calendar.
+ */
+model SchedulingProfile {
+  id                    String    @id @default(uuid()) @db.Uuid
+  workspaceId           String    @db.Uuid
+  userId                String    @db.Uuid
+  timezone              String
+  /// 0 = Sunday … 6 = Saturday
+  workingDays           Int[]
+  /// Minutes after local midnight.
+  meetingStartMinute    Int       @default(600)
+  meetingEndMinute      Int       @default(960)
+  lunchStartMinute      Int?
+  lunchEndMinute        Int?
+  bufferMinutes         Int       @default(15)
+  maxMeetingsPerDay     Int       @default(5)
+  minNoticeMinutes      Int       @default(240)
+  calendarIntegrationId String?   @db.Uuid
+  calendarId            String    @default("primary")
+  acceptsMeetings       Boolean   @default(true)
+  /// Away (holiday, leave): no slots before this time (screen #8 §42).
+  unavailableUntil      DateTime? @db.Timestamptz(3)
+  createdAt             DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime  @updatedAt @db.Timestamptz(3)
+  version               Int       @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, userId])
+}
+
+/**
+ * One meeting (docs/06 §63-72, screen #8). Ours is canonical; the calendar event is mapped onto it (provider event id,
+ * etag, last sync). Never BOOKED before the calendar confirmed the event or a person recorded an external booking.
+ */
+model Meeting {
+  id                    String          @id @default(uuid()) @db.Uuid
+  workspaceId           String          @db.Uuid
+  companyId             String          @db.Uuid
+  opportunityId         String?         @db.Uuid
+  conversationId        String?         @db.Uuid
+  meetingTypeId         String          @db.Uuid
+  ownerUserId           String?         @db.Uuid
+  primaryPersonId       String?         @db.Uuid
+  title                 String
+  status                MeetingStatus   @default(PROPOSED)
+  /// The confirmed time (set when BOOKED).
+  startAt               DateTime?       @db.Timestamptz(3)
+  endAt                 DateTime?       @db.Timestamptz(3)
+  /// A time waiting for the calendar (booking or reschedule) — the confirmed time above stays until it is confirmed.
+  pendingStartAt        DateTime?       @db.Timestamptz(3)
+  pendingEndAt          DateTime?       @db.Timestamptz(3)
+  /// The prospect's timezone, where it came from and how sure we are (screen #8 §4) — never a silent guess.
+  timezone              String
+  timezoneSource        String
+  timezoneConfidence    ConfidenceLevel
+  ownerTimezone         String
+  routingReason         String?
+  /// What they asked for, in their words ("Thursday afternoon works"), and the message it came from.
+  requestText           String?
+  requestMessageId      String?         @db.Uuid
+  /// { days: [4], part: 'AFTERNOON', label } read from their words.
+  preference            Json?
+  /// [{ start, end }] — free in the calendar at slotsCheckedAt; checked again before booking.
+  offeredSlots          Json            @default("[]")
+  slotsCheckedAt        DateTime?       @db.Timestamptz(3)
+  offeredAt             DateTime?       @db.Timestamptz(3)
+  calendarIntegrationId String?         @db.Uuid
+  calendarId            String?
+  providerEventId       String?
+  providerEtag          String?
+  lastSyncedAt          DateTime?       @db.Timestamptz(3)
+  /// PROVIDER / MANUAL
+  bookedVia             String?
+  bookedAt              DateTime?       @db.Timestamptz(3)
+  /// The latest calendar action (book / move / cancel).
+  externalActionId      String?         @db.Uuid
+  locationType          String          @default("VIDEO")
+  meetingUrl            String?
+  statusReason          String?
+  /// PROSPECT / TEAM / SYSTEM / PROVIDER / MANUAL — a cancellation is not a lost deal (docs/09 §59-64).
+  cancelSource          String?
+  cancelReason          String?
+  cancelledAt           DateTime?       @db.Timestamptz(3)
+  completedAt           DateTime?       @db.Timestamptz(3)
+  createdByType         ActorType
+  createdById           String?
+  createdAt             DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime        @updatedAt @db.Timestamptz(3)
+  version               Int             @default(1)
+
+  workspace   Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  meetingType MeetingType       @relation(fields: [workspaceId, meetingTypeId], references: [workspaceId, id], onDelete: Restrict)
+  attendees   MeetingAttendee[]
+  briefs      MeetingBrief[]
+  outcome     MeetingOutcome?
+  changes     MeetingChange[]
+
+  @@unique([workspaceId, id])
+  @@unique([calendarIntegrationId, providerEventId])
+  @@index([workspaceId, status, startAt])
+  @@index([workspaceId, ownerUserId, startAt])
+  @@index([workspaceId, companyId])
+  @@index([workspaceId, opportunityId])
+  @@index([workspaceId, conversationId])
+}
+
+/**
+ * Who takes part (screen #8 §33-34): prospects and colleagues; expected vs actually attended (null = unknown).
+ */
+model MeetingAttendee {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  meetingId   String   @db.Uuid
+  /// INTERNAL / EXTERNAL
+  side        String
+  personId    String?  @db.Uuid
+  userId      String?  @db.Uuid
+  name        String
+  email       String?
+  role        String?
+  expected    Boolean  @default(true)
+  attended    Boolean?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  meeting   Meeting   @relation(fields: [workspaceId, meetingId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([meetingId])
+}
+
+/**
+ * The pre-meeting brief (screen #8 §20-23), versioned: who, why they engaged, what is known and unknown, what they
+ * asked and objected to, suggested questions with reasons, what not to ask again — and the gaps, said plainly.
+ */
+model MeetingBrief {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  meetingId   String   @db.Uuid
+  version     Int
+  content     Json
+  gaps        String[]
+  /// RULES now; an AI brief arrives with memory (Phase 15) and must cite the same sources.
+  method      String   @default("RULES")
+  generatedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  meeting   Meeting   @relation(fields: [workspaceId, meetingId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([meetingId, version])
+}
+
+/**
+ * What happened (screen #8 §28-29): a structured outcome, a person's notes, the next step, and the stage the rules
+ * recommend — applied only when a person accepts it.
+ */
+model MeetingOutcome {
+  id               String             @id @default(uuid()) @db.Uuid
+  workspaceId      String             @db.Uuid
+  meetingId        String             @unique @db.Uuid
+  outcome          MeetingOutcomeType
+  summary          String?
+  notes            String?
+  nextStep         String?
+  recommendedStage StageSemantic?
+  stageApplied     Boolean            @default(false)
+  recordedById     String?            @db.Uuid
+  recordedAt       DateTime           @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  meeting   Meeting   @relation(fields: [workspaceId, meetingId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([workspaceId, meetingId])
+}
+
+/**
+ * The meeting's journey (docs/09 §59-64: "old meeting historical"): every booking, move, cancellation, no-show and
+ * calendar-side change, with who or what caused it.
+ */
+model MeetingChange {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  meetingId   String    @db.Uuid
+  /// PROPOSED / OFFERED / BOOKING_REQUESTED / BOOKED / BOOKING_FAILED / RESCHEDULED / CANCELLED / COMPLETED / NO_SHOW / CALENDAR_CHANGED / CALENDAR_DELETED
+  kind        String
+  fromStartAt DateTime? @db.Timestamptz(3)
+  toStartAt   DateTime? @db.Timestamptz(3)
+  toEndAt     DateTime? @db.Timestamptz(3)
+  /// PROSPECT / TEAM / SYSTEM / PROVIDER / AI
+  source      String
+  actorType   ActorType
+  actorId     String?
+  reason      String?
+  at          DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  meeting   Meeting   @relation(fields: [workspaceId, meetingId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([meetingId, at])
 }

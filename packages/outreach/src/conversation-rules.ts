@@ -45,7 +45,7 @@ export function nextStage(current: ConversationStage, intent: Intent): Conversat
     case 'QUESTION':
     case 'PRICING':
     case 'OBJECTION':
-      return current === 'MEETING_REQUESTED' ? current : 'ENGAGED';
+      return current === 'MEETING_REQUESTED' || current === 'MEETING_BOOKED' ? current : 'ENGAGED';
     case 'OUT_OF_OFFICE':
     case 'AUTOMATED':
       return current;
@@ -115,7 +115,8 @@ export function nextActionFor(c: ConversationState & { escalationReason: string 
   if (c.snoozedUntil && c.snoozedUntil > now) return `Get back in touch after ${c.snoozedUntil.toISOString().slice(0, 10)}`;
   if (c.replyQueued) return 'Reply is on its way (checked again right before sending)';
   if (c.pendingApproval) return 'Approve or edit the AI reply';
-  if (c.stage === 'MEETING_REQUESTED') return 'Book the meeting — agree a time with them';
+  if (c.stage === 'MEETING_REQUESTED') return 'Book the meeting — offer the free times, or book one directly';
+  if (c.stage === 'MEETING_BOOKED' && !c.needsHuman && c.waitingOn !== 'US') return 'Meeting booked — prepare with the brief';
   if (c.needsHuman) return `Reply yourself: ${c.escalationReason ?? 'the AI should not answer this alone'}`;
   if (c.draftReady) return 'Review the AI draft and send it';
   if (c.waitingOn === 'US') return c.mode === 'HUMAN' ? 'Write a reply' : 'The AI is preparing a reply';

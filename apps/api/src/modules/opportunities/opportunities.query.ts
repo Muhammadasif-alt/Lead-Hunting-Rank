@@ -156,6 +156,13 @@ export class OpportunitiesQuery {
       db.pipeline.findFirst({ where: { workspaceId, isDefault: true }, include: { stages: { orderBy: { position: 'asc' } } } }),
       db.employment.findMany({ where: { workspaceId, companyId: o.companyId, isCurrent: true }, select: { title: true, person: { select: { id: true, fullName: true } } } }),
     ]);
+    // Meeting journey (screen #8 §35): this deal's meetings, plus the company's that aren't tied to another deal.
+    const meetings = await db.meeting.findMany({
+      where: { workspaceId, OR: [{ opportunityId: o.id }, { companyId: o.companyId, opportunityId: null }] },
+      orderBy: [{ startAt: { sort: 'asc', nulls: 'last' } }, { createdAt: 'asc' }],
+      take: 20,
+      select: { id: true, title: true, status: true, startAt: true, pendingStartAt: true, timezone: true, meetingType: { select: { name: true } }, outcome: { select: { outcome: true, nextStep: true } } },
+    });
     // Origin (screen #7 §28): which market found the company first.
     const firstSeen = await db.discoveryObservation.findFirst({ where: { workspaceId, companyId: o.companyId }, orderBy: { createdAt: 'asc' }, select: { provider: true, mission: { select: { market: { select: { id: true, name: true } } } } } });
     const inputs = await this.inputs([o]);
@@ -233,6 +240,7 @@ export class OpportunitiesQuery {
       lossSuggestion,
       timeline: events.map((e) => ({ id: e.id, type: e.eventType, payload: e.payload, actorType: e.actorType, actorName: nameOf(e.actorId), at: e.occurredAt })),
       members: members.map((m) => m.user),
+      meetings: meetings.map((m) => ({ id: m.id, title: m.title, typeName: m.meetingType.name, status: m.status, startAt: m.startAt, pendingStartAt: m.pendingStartAt, timezone: m.timezone, outcome: m.outcome?.outcome ?? null, nextStep: m.outcome?.nextStep ?? null })),
     };
   }
 }

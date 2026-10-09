@@ -1,5 +1,5 @@
 /** Shapes of the Conversations API (`/api/v1/conversations`, Phase 12) and display helpers for the AI Inbox. */
-import type { ConversationMode, ConversationStage, InboxCategory, Intent } from "@revenue-os/shared";
+import type { ConversationMode, ConversationStage, InboxCategory, Intent, MeetingStatusKey } from "@revenue-os/shared";
 
 export type WaitingOn = "US" | "PROSPECT" | "NOBODY";
 export type ReplyStatus =
@@ -96,6 +96,29 @@ export interface Reply {
   createdAt: string;
 }
 
+export interface ConversationMeeting {
+  id: string;
+  status: MeetingStatusKey;
+  title: string;
+  typeName: string;
+  durationMinutes: number;
+  ownerName: string | null;
+  routingReason: string | null;
+  startAt: string | null;
+  pendingStartAt: string | null;
+  timezone: string;
+  timezoneConfidence: "HIGH" | "MEDIUM" | "LOW";
+  ownerTimezone: string;
+  requestText: string | null;
+  preferenceLabel: string | null;
+  slots: { start: string; end: string }[];
+  slotsCheckedAt: string | null;
+  offeredAt: string | null;
+  statusReason: string | null;
+  meetingUrl: string | null;
+  nextAction: string;
+}
+
 export interface ConversationDetail {
   conversation: {
     id: string;
@@ -146,6 +169,8 @@ export interface ConversationDetail {
   members: { id: string; name: string }[];
   opportunity: { id: string; name: string; status: string; stage: string } | null;
   commercialSignal: { strength: "STRONG" | "MODERATE"; reason: string; quote: string | null } | null;
+  /** Phase 14: the meeting being arranged here, else the next booked one. */
+  meeting: ConversationMeeting | null;
 }
 
 /** Category look: the inbox is an email area (blue tone) but each bucket reads at a glance. */

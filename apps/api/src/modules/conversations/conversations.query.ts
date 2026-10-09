@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { InboxCategory, Prisma } from '@revenue-os/database';
-import { nextActionFor, withWaiting, type ConversationContextMap } from '@revenue-os/outreach';
+import { meetingNextAction, nextActionFor, withWaiting, type ConversationContextMap } from '@revenue-os/outreach';
 import { INBOX_CATEGORIES, NotFoundError } from '@revenue-os/shared';
 import { PrismaService } from '../../infra/prisma.service.js';
 
@@ -105,6 +105,12 @@ export class ConversationsQuery {
       db.companyAssessment.findFirst({ where: { workspaceId, companyId: c.companyId, dimension: 'PRIORITY', supersededAt: null }, select: { level: true, reasons: true } }),
     ]);
     const opportunity = c.opportunityId ? await db.opportunity.findFirst({ where: { id: c.opportunityId, workspaceId }, select: { id: true, name: true, status: true, stage: { select: { name: true, semantic: true } } } }) : null;
+    // Phase 14: the meeting being arranged in this conversation, else the next booked one.
+    const meetingRow =
+      (await db.meeting.findFirst({ where: { workspaceId, conversationId: c.id, status: { in: ['PROPOSED', 'PENDING_CONFIRMATION'] } }, include: { meetingType: { select: { name: true, durationMinutes: true } } } })) ??
+      (await db.meeting.findFirst({ where: { workspaceId, conversationId: c.id, status: { in: ['BOOKED', 'RESCHEDULING'] }, startAt: { gt: new Date(Date.now() - 2 * 3_600_000) } }, orderBy: { startAt: 'asc' }, include: { meetingType: { select: { name: true, durationMinutes: true } } } }));
+    const meetingOwner = meetingRow?.ownerUserId ? await db.user.findUnique({ where: { id: meetingRow.ownerUserId }, select: { name: true } }) : null;
+    const meetingSlots = meetingRow && Array.isArray(meetingRow.offeredSlots) ? (meetingRow.offeredSlots as unknown as { start: string; end: string }[]) : [];
     const actionIds = replies.map((r) => r.externalActionId).filter((x): x is string => !!x);
     const actions = actionIds.length ? await db.externalAction.findMany({ where: { id: { in: actionIds } }, select: { id: true, status: true, statusReason: true, approvalRequestId: true, resumeAt: true } }) : [];
     const userIds = [...new Set([...messages.map((m) => m.authorUserId), ...replies.map((r) => r.authorUserId), c.takenOverById, ...events.map((e) => e.actorId)].filter((x): x is string => !!x))];
@@ -211,6 +217,30 @@ export class ConversationsQuery {
       members: members.map((m) => m.user),
       opportunity: opportunity ? { id: opportunity.id, name: opportunity.name, status: opportunity.status, stage: opportunity.stage.name } : null,
       commercialSignal: (c.commercialSignal ?? null) as { strength: string; reason: string; quote: string | null } | null,
+      meeting: meetingRow
+        ? {
+            id: meetingRow.id,
+            status: meetingRow.status,
+            title: meetingRow.title,
+            typeName: meetingRow.meetingType.name,
+            durationMinutes: meetingRow.meetingType.durationMinutes,
+            ownerName: meetingOwner?.name ?? null,
+            routingReason: meetingRow.routingReason,
+            startAt: meetingRow.startAt,
+            pendingStartAt: meetingRow.pendingStartAt,
+            timezone: meetingRow.timezone,
+            timezoneConfidence: meetingRow.timezoneConfidence,
+            ownerTimezone: meetingRow.ownerTimezone,
+            requestText: meetingRow.requestText,
+            preferenceLabel: (meetingRow.preference as { label?: string } | null)?.label ?? null,
+            slots: meetingSlots,
+            slotsCheckedAt: meetingRow.slotsCheckedAt,
+            offeredAt: meetingRow.offeredAt,
+            statusReason: meetingRow.statusReason,
+            meetingUrl: meetingRow.meetingUrl,
+            nextAction: meetingNextAction({ status: meetingRow.status, startAt: meetingRow.startAt, endAt: meetingRow.endAt, pendingStartAt: meetingRow.pendingStartAt, offeredAt: meetingRow.offeredAt, slots: meetingSlots.length, statusReason: meetingRow.statusReason, hasOwner: !!meetingRow.ownerUserId }, now),
+          }
+        : null,
     };
   }
 }

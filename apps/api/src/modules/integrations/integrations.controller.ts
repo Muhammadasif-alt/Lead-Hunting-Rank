@@ -11,6 +11,7 @@ import { IntegrationService } from './integration.service.js';
 const ConnectInput = z.strictObject({ name: z.string().trim().min(1).max(120).optional() });
 const UsageQuery = z.object({ days: z.coerce.number().int().min(1).max(90).default(7) });
 const ProviderKey = new ZodValidationPipe(z.string().regex(/^[a-z0-9_]{1,64}$/, 'invalid provider key'));
+const GoogleStartQuery = z.strictObject({ provider: z.enum(['gmail', 'google_calendar']).default('gmail') });
 
 /** Integrations (screen #15, docs/12 §148). Reading needs integration.read; changing anything needs integration.manage. */
 @Controller('integrations')
@@ -21,11 +22,11 @@ export class IntegrationsController {
     private readonly google: GoogleOAuthService,
   ) {}
 
-  /** Starts "Connect with Google" for Gmail: returns Google's consent URL for this workspace + user. */
+  /** Starts "Connect with Google" for Gmail (default) or Google Calendar: returns Google's consent URL for this workspace + user. */
   @Get('oauth/google/start')
   @RequirePermission('integration.manage')
-  googleStart(@CurrentAccess() access: Access) {
-    return this.google.start(this.access.serviceContext(access));
+  googleStart(@Query(new ZodValidationPipe(GoogleStartQuery)) q: z.output<typeof GoogleStartQuery>, @CurrentAccess() access: Access) {
+    return this.google.start(this.access.serviceContext(access), q.provider);
   }
 
   /** Google's redirect target. Public by necessity — the one-time state (bound to workspace + user) is the proof. */

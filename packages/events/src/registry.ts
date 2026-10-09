@@ -126,6 +126,21 @@ export interface EventPayloads {
   OpportunityReopened: { opportunityId: string; from: string; to: string; reason: string };
   OpportunityStakeholderAdded: { opportunityId: string; name: string; role: string; source: string };
   QualificationUpdated: { opportunityId: string; status: string; changedKeys: string[] };
+  // meetings (docs/17 §93-98) — ids and times, never message text. MeetingBooked is never edited: a move or a
+  // cancellation is a new event (docs/07 §106).
+  MeetingProposed: { meetingId: string; companyId: string; conversationId: string | null; opportunityId: string | null; slots: number; requestedBy: string };
+  MeetingSlotsOffered: { meetingId: string; slots: number };
+  MeetingBookingRequested: { meetingId: string; externalActionId: string; start: string; requestedBy: string };
+  MeetingBooked: { meetingId: string; companyId: string; opportunityId: string | null; start: string; end: string; via: 'PROVIDER' | 'MANUAL' };
+  MeetingBookingFailed: { meetingId: string; reason: string };
+  MeetingRescheduleRequested: { meetingId: string; externalActionId: string; from: string | null; to: string };
+  MeetingRescheduled: { meetingId: string; from: string | null; to: string; source: string };
+  MeetingCancelled: { meetingId: string; source: string; reason: string | null };
+  MeetingCompleted: { meetingId: string; outcome: string; recommendedStage: string | null };
+  MeetingNoShow: { meetingId: string; companyId: string; noShows: number };
+  MeetingBriefGenerated: { meetingId: string; version: number; gaps: number };
+  MeetingTypeUpdated: { meetingTypeId: string; changedFields: string[] };
+  SchedulingProfileUpdated: { userId: string; changedFields: string[] };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -191,7 +206,9 @@ export type AggregateType =
   | 'CAMPAIGN_MESSAGE'
   | 'MAILBOX_MESSAGE'
   | 'CONVERSATION'
-  | 'OPPORTUNITY';
+  | 'OPPORTUNITY'
+  | 'MEETING'
+  | 'MEETING_TYPE';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -218,7 +235,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales' | 'meetings';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -381,6 +398,19 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   OpportunityReopened: entity('sales', 'OPPORTUNITY', 'A won or lost deal was reopened with a reason'),
   OpportunityStakeholderAdded: entity('sales', 'OPPORTUNITY', 'Someone involved in the decision was added or suggested'),
   QualificationUpdated: entity('sales', 'OPPORTUNITY', 'Known / unknown qualification changed'),
+  MeetingProposed: entity('meetings', 'MEETING', 'Meeting intent recorded with genuinely free slots (nothing booked yet)'),
+  MeetingSlotsOffered: entity('meetings', 'MEETING', 'Free times were offered to the prospect'),
+  MeetingBookingRequested: entity('meetings', 'MEETING', 'A booking was asked for through a calendar.book action (the Policy Engine decides)'),
+  MeetingBooked: entity('meetings', 'MEETING', 'The calendar confirmed the event (or a person recorded an external booking)'),
+  MeetingBookingFailed: entity('meetings', 'MEETING', 'The booking was not confirmed (slot taken, blocked, failed) — new times are needed'),
+  MeetingRescheduleRequested: entity('meetings', 'MEETING', 'A new time was asked for; the old time stands until the calendar confirms'),
+  MeetingRescheduled: entity('meetings', 'MEETING', 'The meeting moved (by us, or changed in the calendar)'),
+  MeetingCancelled: entity('meetings', 'MEETING', 'The meeting was cancelled, with who and why (not a lost deal)'),
+  MeetingCompleted: entity('meetings', 'MEETING', 'The meeting happened; outcome and next step recorded'),
+  MeetingNoShow: entity('meetings', 'MEETING', 'The prospect did not attend (not a lost deal)'),
+  MeetingBriefGenerated: entity('meetings', 'MEETING', 'A pre-meeting brief was prepared from current data'),
+  MeetingTypeUpdated: entity('meetings', 'MEETING_TYPE', 'A meeting type was created or changed (field names, not values)'),
+  SchedulingProfileUpdated: entity('meetings', 'WORKSPACE', 'A team member changed when they can be booked'),
   OutboundStateChanged: entity('policy', 'WORKSPACE', 'Outbound was paused, emergency-stopped or resumed (kill switch)'),
   PolicyUpdated: entity('policy', 'WORKSPACE', 'The autonomy level or a configurable rule changed (new policy version)'),
   SuppressionAdded: entity('policy', 'SUPPRESSION', 'A contact, domain, person or company was put on the do-not-contact list'),

@@ -20,10 +20,11 @@ export function contextHash(ctx: PolicyContext): string {
   return payloadHash(rest);
 }
 
-/** Recipient emails of an outbound action, normalized. */
+/** Recipient emails of an outbound action, normalized: an email's `to`, a calendar invite's `attendees`. */
 export function recipientsOf(actionType: string, payload: Record<string, unknown>): string[] {
-  if (actionType !== 'email.send' && actionType !== 'email.reply') return [];
-  const to = Array.isArray(payload.to) ? payload.to : typeof payload.to === 'string' ? [payload.to] : [];
+  const field = actionType === 'email.send' || actionType === 'email.reply' ? payload.to : actionType === 'calendar.book' || actionType === 'calendar.update' ? payload.attendees : undefined;
+  if (field === undefined) return [];
+  const to = Array.isArray(field) ? field : typeof field === 'string' ? [field] : [];
   return [...new Set(to.map((v) => (typeof v === 'string' ? normalizeEmail(v) : null)).filter((v): v is string => !!v))];
 }
 

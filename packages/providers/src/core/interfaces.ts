@@ -100,6 +100,10 @@ export interface CalendarEventInput extends TimeRange {
   title: string;
   attendees: string[];
   description?: string;
+  /** IANA timezone the invite is shown in. */
+  timezone?: string;
+  /** Ask the calendar for a video link (Google Meet) with the event. */
+  videoLink?: boolean;
   idempotencyKey: string;
 }
 
@@ -111,15 +115,19 @@ export interface CalendarEvent extends TimeRange {
   status: 'CONFIRMED' | 'CANCELLED';
   /** Provider version (etag) — used to detect changes made outside Revenue OS (docs/12 §34-36). */
   etag: string;
+  meetingUrl?: string | null;
 }
 
 export interface CalendarProvider extends ProviderAdapter {
   /** Busy blocks in a range. Always fresh — availability is never cached as truth (§33). */
   getBusy(calendarId: string, range: TimeRange, options: CallOptions): Promise<TimeRange[]>;
   createEvent(input: CalendarEventInput, options: CallOptions): Promise<CalendarEvent>;
+  /** Moves an event (reschedule). The old time stays until this succeeds (screen #8 §14). */
+  updateEvent(calendarId: string, eventId: string, change: TimeRange & { title?: string }, options: CallOptions): Promise<CalendarEvent>;
   cancelEvent(calendarId: string, eventId: string, options: CallOptions): Promise<CalendarEvent>;
   getEvent(calendarId: string, eventId: string, options: CallOptions): Promise<CalendarEvent | null>;
-  findEventByIdempotencyKey(idempotencyKey: string, options: CallOptions): Promise<CalendarEvent | null>;
+  /** Reconciliation: was an event already created for this idempotency key? */
+  findEventByIdempotencyKey(idempotencyKey: string, options: CallOptions, calendarId?: string): Promise<CalendarEvent | null>;
 }
 
 // ───────────────────────────── lead discovery / enrichment / verification ─────────────────────────────

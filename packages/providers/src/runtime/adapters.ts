@@ -4,7 +4,8 @@ import type { Redis } from 'ioredis';
 import { providerDefinition } from '../catalog.js';
 import type { Capability } from '../core/capabilities.js';
 import type { ProviderAdapter } from '../core/interfaces.js';
-import { FakeCalendarProvider } from '../fakes/calendar.js';
+import { GoogleCalendarProvider } from '../calendar/google-calendar.js';
+import { FakeCalendarProvider, MemoryCalendarStore, RedisCalendarStore } from '../fakes/calendar.js';
 import { FakeEmailProvider, MemoryMailboxStore, RedisMailboxStore } from '../fakes/email.js';
 import { FakeDirectoryProvider, FakeLeadProvider } from '../fakes/leads.js';
 import { FakeLLMProvider } from '../fakes/llm.js';
@@ -32,7 +33,7 @@ export interface AdapterFactory {
 export interface AdapterFactoryOptions {
   appEnv: string;
   storagePath: string;
-  /** With Redis, the fake mailbox survives restarts and is shared by API and worker. */
+  /** With Redis, the fake mailbox and calendar survive restarts and are shared by API and worker. */
   redis?: Redis;
   prefix?: string;
   /** Server LLM configuration (LLM_PROVIDER / LLM_API_KEY). */
@@ -42,14 +43,14 @@ export interface AdapterFactoryOptions {
   fetch?: typeof fetch;
 }
 
-/** A fresh Gmail access token: refreshed (and re-stored, encrypted) a minute before it expires. */
-function gmailTokenSource(integrationId: string, creds: NonNullable<AdapterFactoryOptions['credentials']>, fetchFn?: typeof fetch) {
+/** A fresh Google access token (Gmail, Calendar): refreshed (and re-stored, encrypted) a minute before it expires. */
+function googleTokenSource(integrationId: string, creds: NonNullable<AdapterFactoryOptions['credentials']>, fetchFn?: typeof fetch) {
   const store = new CredentialStore(creds.db, creds.encryptionKey);
   let cached: GoogleTokens | null = null;
   return async () => {
     if (!creds.google) throw new ProviderCallError('AUTH_REQUIRED', 'Google OAuth is not configured on this server');
     cached ??= await store.load<GoogleTokens>(integrationId);
-    if (!cached) throw new ProviderCallError('AUTH_REQUIRED', 'No credentials stored for this mailbox — reconnect it');
+    if (!cached) throw new ProviderCallError('AUTH_REQUIRED', 'No credentials stored for this connection — reconnect it');
     if (cached.expiresAt - Date.now() < 60_000) {
       cached = await refreshGoogleToken(creds.google, cached, fetchFn);
       const row = await creds.db.integration.findUnique({ where: { id: integrationId }, select: { workspaceId: true } });
@@ -67,7 +68,6 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
   const cache = new Map<string, ProviderAdapter>();
   const fakesAllowed = options.appEnv !== 'production';
   const shared = {
-    fake_calendar: new FakeCalendarProvider(),
     fake_leads: new FakeLeadProvider(),
     fake_directory: new FakeDirectoryProvider(),
     fake_verification: new FakeVerificationProvider(),
@@ -84,13 +84,19 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
         return new FakeEmailProvider(
           options.redis ? new RedisMailboxStore(options.redis, `${options.prefix ?? 'rhl'}:fake-email:${integration.id}`) : new MemoryMailboxStore(),
         );
+      case 'fake_calendar':
+        return new FakeCalendarProvider(
+          options.redis ? new RedisCalendarStore(options.redis, `${options.prefix ?? 'rhl'}:fake-calendar:${integration.id}`) : new MemoryCalendarStore(),
+        );
       case 'local_storage':
         // One directory per workspace — a key can never reach another workspace's files.
         return new LocalStorageProvider(join(options.storagePath, integration.workspaceId));
       case 'web_fetcher':
         return new HttpWebsiteFetcher();
       case 'gmail':
-        return options.credentials ? new GmailProvider({ getAccessToken: gmailTokenSource(integration.id, options.credentials, options.fetch), fetch: options.fetch }) : null;
+        return options.credentials ? new GmailProvider({ getAccessToken: googleTokenSource(integration.id, options.credentials, options.fetch), fetch: options.fetch }) : null;
+      case 'google_calendar':
+        return options.credentials ? new GoogleCalendarProvider({ getAccessToken: googleTokenSource(integration.id, options.credentials, options.fetch), fetch: options.fetch }) : null;
       case 'anthropic':
         return options.llm?.provider === 'anthropic' && options.llm.apiKey ? new AnthropicProvider({ apiKey: options.llm.apiKey }) : null;
       default:

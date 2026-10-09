@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlarmClock,
@@ -39,7 +39,7 @@ const SIMULATIONS: [string, string][] = [
 ];
 
 /** The conversation itself: messages, the AI's draft with its grounding, approvals, and the person's own reply. */
-export function Thread({ detail, onBack, onChange }: { detail: ConversationDetail; onBack: () => void; onChange: () => Promise<void> }) {
+export function Thread({ detail, onBack, onChange, prefill }: { detail: ConversationDetail; onBack: () => void; onChange: () => Promise<void>; prefill?: { text: string; key: number } | null }) {
   const me = useMe();
   const can = (p: PermissionKey) => me.permissions.includes(p);
   const c = detail.conversation;
@@ -50,6 +50,16 @@ export function Thread({ detail, onBack, onChange }: { detail: ConversationDetai
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // "Offer these times" (meeting card) puts the message here for a person to read, edit and send.
+  useEffect(() => {
+    if (!prefill) return;
+    setBody(prefill.text);
+    setFromReplyId(null);
+    setNoteMode(false);
+    const el = document.getElementById("composer");
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    el?.focus();
+  }, [prefill]);
 
   async function run(name: string, path: string, payload: unknown = {}, confirmText?: string, done?: string) {
     if (confirmText && !window.confirm(confirmText)) return false;

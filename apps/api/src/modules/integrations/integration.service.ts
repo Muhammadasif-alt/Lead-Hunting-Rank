@@ -196,9 +196,9 @@ export class IntegrationService {
       (tx, i) => recordEvent(tx, ctx, 'IntegrationDisconnected', i.id, { integrationId: i.id, provider: i.provider }),
       { disconnectedAt: new Date() },
     );
-    // OAuth mailboxes: revoke the grant and delete the stored tokens — reconnecting asks Google again.
+    // Google connections (Gmail, Calendar): revoke the grant and delete the stored tokens — reconnecting asks Google again.
     const row = await this.prisma.client.integration.findUnique({ where: { id }, select: { provider: true } });
-    if (row?.provider === 'gmail') await this.google.forget(id);
+    if (row?.provider === 'gmail' || row?.provider === 'google_calendar') await this.google.forget(id);
     return result;
   }
 

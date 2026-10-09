@@ -1,5 +1,5 @@
 /** Shapes of the Opportunities API (`/api/v1/opportunities`, Phase 13) and display helpers. */
-import type { DealHealth, LossReasonCode, QualificationKey, StageSemantic, StakeholderRoleKey } from "@revenue-os/shared";
+import type { DealHealth, LossReasonCode, MeetingOutcomeKey, MeetingStatusKey, QualificationKey, StageSemantic, StakeholderRoleKey } from "@revenue-os/shared";
 
 export type OpportunityStatus = "OPEN" | "WON" | "LOST" | "ARCHIVED";
 export type View = "pipeline" | "priority" | "mine" | "closed";
@@ -116,6 +116,7 @@ export interface OpportunityDetail {
   lossSuggestion: { code: LossReasonCode; quote: string } | null;
   timeline: { id: string; type: string; payload: Record<string, unknown>; actorType: string; actorName: string | null; at: string }[];
   members: { id: string; name: string }[];
+  meetings: { id: string; title: string; typeName: string; status: MeetingStatusKey; startAt: string | null; pendingStartAt: string | null; timezone: string; outcome: MeetingOutcomeKey | null; nextStep: string | null }[];
 }
 
 export const HEALTH_STYLE: Record<DealHealth, { dot: string; badge: string }> = {

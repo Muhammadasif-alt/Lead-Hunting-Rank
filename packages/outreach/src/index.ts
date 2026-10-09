@@ -17,3 +17,8 @@ export * from './conversation-rules.js';
 // with requirements and history, evidence-based health and next action, explicit won / lost.
 export * from './opportunities.js';
 export * from './opportunity-rules.js';
+// Calendar + meetings (Phase 14, docs/17 §93-98, screen #8): meeting intent → type → timezone → routing → real
+// availability → offer → final re-check → calendar.book (Policy Engine) → BOOKED only when the calendar confirms →
+// brief → outcome → next step.
+export * from './meeting-rules.js';
+export * from './meetings.js';

@@ -32,6 +32,7 @@ export function Inbox({ initialId }: { initialId: string | null }) {
   const [selected, setSelected] = useState<string | null>(initialId);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [prefill, setPrefill] = useState<{ text: string; key: number } | null>(null);
   const selectedRef = useRef(selected);
   useEffect(() => {
     selectedRef.current = selected;
@@ -181,14 +182,14 @@ export function Inbox({ initialId }: { initialId: string | null }) {
               <Loader className="size-4 animate-spin" /> Loading conversation…
             </div>
           ) : (
-            <Thread detail={detail} onBack={() => open(null)} onChange={refresh} />
+            <Thread detail={detail} onBack={() => open(null)} onChange={refresh} prefill={prefill} />
           )}
         </section>
 
         {/* ── intelligence ── */}
         {selected && detail && (
           <aside className="min-w-0 lg:col-start-2 xl:sticky xl:top-4 xl:col-start-auto xl:max-h-[calc(100dvh-2rem)] xl:overflow-y-auto">
-            <Intelligence detail={detail} onChange={refresh} />
+            <Intelligence detail={detail} onChange={refresh} onOffer={(text) => setPrefill({ text, key: Date.now() })} />
           </aside>
         )}
       </div>

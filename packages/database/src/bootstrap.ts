@@ -32,6 +32,24 @@ const DEFAULT_PIPELINE_STAGES = [
   { name: 'Nurture', stageType: 'OPEN', semantic: 'NURTURE' },
 ] as const;
 
+/**
+ * Default meeting types (screen #8 §2, §9). The AI may book only the early, low-stakes ones; decision calls are booked
+ * by people. Admins change these in Meetings → Setup.
+ */
+export const DEFAULT_MEETING_TYPES = [
+  { key: 'DISCOVERY', name: 'Discovery call', durationMinutes: 30, bufferMinutes: 15, requiredQualification: 'NONE', aiBookingAllowed: true, description: 'Understand their need, timeline and who decides' },
+  { key: 'CONSULTATION', name: 'Website consultation', durationMinutes: 30, bufferMinutes: 15, requiredQualification: 'NEED', aiBookingAllowed: true, description: 'Walk through what we would change and why' },
+  { key: 'TECHNICAL_DEMO', name: 'Technical demo', durationMinutes: 45, bufferMinutes: 15, requiredQualification: 'QUALIFIED', aiBookingAllowed: true, description: 'Show how it works with their setup' },
+  { key: 'PROPOSAL_REVIEW', name: 'Proposal review', durationMinutes: 30, bufferMinutes: 15, requiredQualification: 'QUALIFIED', aiBookingAllowed: false, description: 'Go through the proposal and answer questions' },
+  { key: 'DECISION', name: 'Closing / decision call', durationMinutes: 30, bufferMinutes: 15, requiredQualification: 'QUALIFIED', aiBookingAllowed: false, description: 'Agree terms and next steps — a person books this' },
+  { key: 'ONBOARDING', name: 'Customer onboarding', durationMinutes: 60, bufferMinutes: 15, requiredQualification: 'NONE', aiBookingAllowed: false, description: 'Kick-off with a new customer' },
+] as const;
+
+/** Creates the default meeting types a workspace doesn't have yet. Idempotent. */
+export async function provisionMeetingTypes(db: Db, workspaceId: string): Promise<void> {
+  await db.meetingType.createMany({ data: DEFAULT_MEETING_TYPES.map((t, position) => ({ workspaceId, position, ...t })), skipDuplicates: true });
+}
+
 /** Hard safety rules (docs/10 §35-36). Shown read-only; enforced in code by @revenue-os/policy. */
 const HARD_RULES = [
   { ruleType: 'NO_SEND_TO_SUPPRESSED', description: 'Never contact an actively suppressed email, phone, person, company or domain.' },
@@ -124,5 +142,6 @@ export async function provisionWorkspaceDefaults(db: Db, workspaceId: string): P
     skipDuplicates: true,
   });
 
+  await provisionMeetingTypes(db, workspaceId);
   return roleIds;
 }

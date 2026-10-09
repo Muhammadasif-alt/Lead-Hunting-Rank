@@ -55,6 +55,8 @@ export const JOBS = {
   conversationProcess: 'conversation.message.process',
   /** Periodic: snoozed conversations whose time has come are brought back to a person. */
   conversationSweep: 'conversation.sweep',
+  /** Periodic: booked meetings reconciled with the calendar (deleted / moved there), briefs prepared before they start. */
+  meetingSweep: 'meeting.sweep',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];

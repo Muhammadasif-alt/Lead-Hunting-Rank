@@ -49,7 +49,7 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     connection: 'NONE',
     fake: true,
     status: 'AVAILABLE',
-    description: 'Simulated calendar with working-hours busy blocks. Events are stored, nobody is invited.',
+    description: 'Simulated calendar with working-hours busy blocks (09–17 UTC on weekdays). Events are stored, nobody is invited — safe for testing bookings.',
   },
   {
     key: 'fake_leads',
@@ -171,9 +171,8 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     costModel: 'FREE',
     connection: 'OAUTH',
     fake: false,
-    status: 'PLANNED',
-    plannedPhase: 14,
-    description: 'Real availability and provider-confirmed bookings.',
+    status: 'AVAILABLE',
+    description: 'Real free/busy time and provider-confirmed bookings with invites (and a Meet link). Minimum scopes: free/busy + events. Uses the same Google OAuth client as Gmail (GOOGLE_OAUTH_CLIENT_ID / SECRET) and ENCRYPTION_KEY.',
   },
   {
     key: 's3',
@@ -197,7 +196,7 @@ export function providerDefinition(key: string): ProviderDefinition | undefined 
 export interface ServerKeys {
   llmProvider?: string;
   llmKeyConfigured?: boolean;
-  /** Google OAuth client + encryption key configured — Gmail (and later Calendar) can be connected. */
+  /** Google OAuth client + encryption key configured — Gmail and Google Calendar can be connected. */
   googleOAuth?: boolean;
 }
 
@@ -206,6 +205,6 @@ export function isConnectable(def: ProviderDefinition, appEnv: string, keys: Ser
   if (def.status !== 'AVAILABLE' || (def.fake && appEnv === 'production')) return false;
   if (def.connection === 'NONE') return true;
   if (def.connection === 'SERVER_KEY') return def.category === 'AI' && keys.llmProvider === def.key && keys.llmKeyConfigured === true;
-  if (def.connection === 'OAUTH') return def.key === 'gmail' && keys.googleOAuth === true;
+  if (def.connection === 'OAUTH') return (def.key === 'gmail' || def.key === 'google_calendar') && keys.googleOAuth === true;
   return false;
 }

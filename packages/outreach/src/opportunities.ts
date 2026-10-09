@@ -312,6 +312,29 @@ export async function changeStage(db: PrismaClient, ctx: ServiceContext, opportu
 }
 
 /**
+ * Moves an open deal forward to `target` inside the caller's transaction — only forward, and only when the stage's
+ * requirements are met (a booked meeting moves a deal to Meeting; it never skips the guards). Returns what was missing
+ * otherwise, so the caller can say why it stayed.
+ */
+export async function advanceStageTx(tx: Tx, ctx: ServiceContext, opportunityId: string, target: StageSemantic, reason: string): Promise<{ moved: boolean; missing: string[] }> {
+  const o = await load(tx, ctx, opportunityId);
+  if (o.status !== 'OPEN') return { moved: false, missing: [`The deal is ${o.status.toLowerCase()}`] };
+  const ORDER = ['NEW', 'DISCOVERY', 'QUALIFIED', 'MEETING', 'PROPOSAL', 'NEGOTIATION'];
+  if (o.stage.semantic !== 'NURTURE' && ORDER.indexOf(o.stage.semantic) >= ORDER.indexOf(target)) return { moved: false, missing: [] };
+  const missing = stageRequirements(target, await snapshotOf(tx, o));
+  if (missing.length) return { moved: false, missing };
+  const { stage } = await pipelineStages(tx, ctx.workspaceId);
+  const to = stage(target);
+  if (!to) return { moved: false, missing: [`The pipeline has no ${STAGE_SEMANTIC_INFO[target].label} stage`] };
+  const { count } = await tx.opportunity.updateMany({ where: { id: o.id, version: o.version }, data: { stageId: to.id, stageEnteredAt: new Date(), version: { increment: 1 } } });
+  if (count !== 1) return { moved: false, missing: ['The deal changed meanwhile'] };
+  await history(tx, ctx, o, o.stage, to, reason);
+  await writeAudit(tx, ctx, { action: 'opportunity.stage_changed', entityType: 'OPPORTUNITY', entityId: o.id, before: { stage: o.stage.semantic }, after: { stage: target }, reason });
+  await recordEvent(tx, ctx, 'OpportunityStageChanged', o.id, { opportunityId: o.id, from: o.stage.semantic, to: target, reason });
+  return { moved: true, missing: [] };
+}
+
+/**
  * MarkOpportunityWon (screen #7 §34): explicit, with the value and what confirmed it. The company becomes a customer,
  * every cold sequence to it stops, and it can't be enrolled in prospecting campaigns again.
  */

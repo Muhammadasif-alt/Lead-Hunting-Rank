@@ -164,8 +164,8 @@ export function Integrations() {
     if (!result) return;
     setOauth(
       result === "connected"
-        ? { ok: true, text: `Gmail connected: ${q.get("account") ?? "mailbox"}` }
-        : { ok: false, text: `Gmail was not connected: ${q.get("reason") ?? "unknown error"}` },
+        ? { ok: true, text: `Google connected: ${q.get("account") ?? "account"}` }
+        : { ok: false, text: `Google was not connected: ${q.get("reason") ?? "unknown error"}` },
     );
     window.history.replaceState(null, "", window.location.pathname);
   }, []);
@@ -494,7 +494,7 @@ function AvailableCard({
     try {
       if (p.connection === "OAUTH") {
         // Google sign-in: the server creates a one-time state and sends the browser to Google's consent screen.
-        const { url } = await api<{ url: string }>("/integrations/oauth/google/start");
+        const { url } = await api<{ url: string }>(`/integrations/oauth/google/start?provider=${p.key === "google_calendar" ? "google_calendar" : "gmail"}`);
         window.location.href = url;
         return;
       }

@@ -88,7 +88,7 @@ export const CATEGORY_INFO: Record<InboxCategory, { label: string; description: 
   HIGH_INTENT: { label: 'High intent', description: 'Interested, asking how it works — move fast' },
   NEEDS_HUMAN: { label: 'Needs you', description: 'Pricing, risk, unclear or taken over — a person acts' },
   AI_HANDLING: { label: 'Waiting / AI', description: 'We answered and wait for the prospect, or the AI is answering within policy' },
-  MEETING: { label: 'Meeting', description: 'Asked for a call — a person books it' },
+  MEETING: { label: 'Meeting', description: 'Asked for a call — free times are found; a person offers them or books' },
   NURTURE: { label: 'Nurture', description: 'Not now — snoozed until a better time' },
   CLOSED: { label: 'Closed', description: 'Resolved, declined or unsubscribed' },
 };
@@ -101,12 +101,13 @@ export const MODE_INFO: Record<ConversationMode, { label: string; description: s
   HUMAN: { label: 'Human', description: 'A person handles it; the AI never replies (it still reads and suggests)' },
 };
 
-export const CONVERSATION_STAGES = ['REPLIED', 'ENGAGED', 'MEETING_REQUESTED', 'NURTURE', 'CLOSED', 'SUPPRESSED'] as const;
+export const CONVERSATION_STAGES = ['REPLIED', 'ENGAGED', 'MEETING_REQUESTED', 'MEETING_BOOKED', 'NURTURE', 'CLOSED', 'SUPPRESSED'] as const;
 export type ConversationStage = (typeof CONVERSATION_STAGES)[number];
 export const STAGE_INFO: Record<ConversationStage, string> = {
   REPLIED: 'Replied',
   ENGAGED: 'Engaged',
   MEETING_REQUESTED: 'Meeting requested',
+  MEETING_BOOKED: 'Meeting booked',
   NURTURE: 'Nurture',
   CLOSED: 'Closed',
   SUPPRESSED: 'Unsubscribed',

@@ -6,6 +6,7 @@ import { addSuppression, requestExternalAction } from '@revenue-os/policy';
 import { INTENT_INFO, NON_HUMAN_INTENTS, readMessage, type Intent, type MessageReading } from '@revenue-os/shared';
 import { categorize, nextStage, priorityOf, REPLY_INTENTS, waitingAfter } from './conversation-rules.js';
 import type { OutreachDeps } from './engine.js';
+import { scheduleFromMessage } from './meetings.js';
 import { opportunityFromConversationTx } from './opportunities.js';
 
 const DAY_MS = 86_400_000;
@@ -60,7 +61,7 @@ async function firstNameOf(db: PrismaClient, conv: Conversation): Promise<string
 
 // ───────────────────────────── process one inbound message ─────────────────────────────
 
-export type ProcessOutcome = 'NOT_FOUND' | 'ALREADY_PROCESSED' | 'CLASSIFIED' | 'DRAFTED' | 'REPLY_REQUESTED';
+export type ProcessOutcome = 'NOT_FOUND' | 'ALREADY_PROCESSED' | 'CLASSIFIED' | 'DRAFTED' | 'REPLY_REQUESTED' | 'MEETING_BOOKING';
 
 /**
  * The incoming reply pipeline (screen #5 §4, docs/17 §77-86): the cold sequence was already stopped when the message
@@ -103,6 +104,13 @@ export async function processConversationMessage(deps: OutreachDeps, job: { work
 
   const applied = await db.$transaction((tx) => applyReading(tx, conv, msg.id, reading, method, agentTaskId, now), TX);
   if (!applied) return 'ALREADY_PROCESSED';
+
+  // Phase 14: they picked an offered time → the Scheduling Agent asks to book it (the calendar invite is the answer, so
+  // no reply is drafted); they asked to meet → genuinely free times are found for a person to offer.
+  if (!NON_HUMAN_INTENTS.includes(reading.primaryIntent) && reading.primaryIntent !== 'UNSUBSCRIBE') {
+    const scheduled = await scheduleFromMessage(deps, { workspaceId: conv.workspaceId, conversationId: conv.id, messageId: msg.id, intents: [reading.primaryIntent, ...reading.secondaryIntents], text: msg.text }).catch(() => null);
+    if (scheduled === 'BOOKING_REQUESTED') return 'MEETING_BOOKING';
+  }
   const fresh = await db.conversation.findUniqueOrThrow({ where: { id: conv.id } });
   if (fresh.mode === 'HUMAN' || !REPLY_INTENTS.includes(reading.primaryIntent) || fresh.stage === 'SUPPRESSED' || fresh.stage === 'CLOSED') return 'CLASSIFIED';
 

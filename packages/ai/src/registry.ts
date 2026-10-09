@@ -16,6 +16,7 @@ export const TOOLS = {
   draftEmail: { category: 'PROPOSAL', description: 'Draft one outreach email for a prospect — sent only if the Policy Engine allows it' },
   classifyMessage: { category: 'ANALYSIS', description: 'Read an inbound email: intents, questions, objections, risk and stated facts with quotes' },
   draftReply: { category: 'PROPOSAL', description: 'Draft a grounded reply in a conversation — sent only if the Policy Engine allows it' },
+  proposeMeetingSlots: { category: 'PROPOSAL', description: 'Find free times in the calendar and propose booking the one a prospect picked — booked only if the Policy Engine allows it' },
   requestResearch: { category: 'COMMAND', description: 'Ask for the company to be researched again' },
 } as const;
 export type ToolName = keyof typeof TOOLS;
@@ -117,6 +118,18 @@ export const AGENTS: Record<AgentType, AgentDefaults> = {
     riskClass: 'MEDIUM',
     label: 'Conversation Agent',
     purpose: 'Drafts grounded replies — answers only from approved knowledge and hands the rest to a person; the Policy Engine decides whether they are sent',
+  },
+  SCHEDULING: {
+    version: 1,
+    // Rule-based today: availability, timezones and slot matching are deterministic — no model is called.
+    modelClass: 'FAST',
+    allowedTools: ['readCompanyContext', 'proposeMeetingSlots'],
+    dailyRunLimit: 500,
+    dailyCostLimitMinor: null,
+    timeoutMs: 60_000,
+    riskClass: 'LOW',
+    label: 'Scheduling Agent',
+    purpose: 'Finds genuinely free times in the calendar, recognises the slot a prospect picked and asks to book it — rule-based, no model; the Policy Engine decides whether it is booked',
   },
 };
 

@@ -17,18 +17,21 @@ import {
 } from '@revenue-os/events/runtime';
 import { FAKE_SEND_ACTION, FakeSideEffectProvider, RedisFakeProviderStore } from '@revenue-os/events/testing';
 import {
+  meetingSweep,
   prepareStep,
   processConversationMessage,
   settleCampaignAction,
   settleConversationReply,
+  settleMeetingAction,
   sweepCampaigns,
   syncAllMailboxes,
   wakeSnoozedConversations,
   withCampaignGuard,
   withConversationGuard,
+  withMeetingGuard,
 } from '@revenue-os/outreach';
 import { createPolicyRevalidator, policySweep } from '@revenue-os/policy';
-import { createEmailSendExecutor, EMAIL_REPLY_ACTION, EMAIL_SEND_ACTION } from '@revenue-os/providers';
+import { CALENDAR_ACTIONS, createCalendarExecutor, createEmailSendExecutor, EMAIL_REPLY_ACTION, EMAIL_SEND_ACTION } from '@revenue-os/providers';
 import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
 import {
   describeError,
@@ -76,14 +79,17 @@ const executors: Record<string, ActionExecutor> = {
   [EMAIL_SEND_ACTION]: emailExecutor,
   [EMAIL_REPLY_ACTION]: emailExecutor,
 };
+// Meetings (Phase 14): book / move / cancel through CALENDAR_WRITE, with a fresh availability check right before.
+const calendarExecutor = createCalendarExecutor(providers.gateway);
+for (const type of CALENDAR_ACTIONS) executors[type] = calendarExecutor;
 if (config.APP_ENV !== 'production') {
   executors[FAKE_SEND_ACTION] = new FakeSideEffectProvider(new RedisFakeProviderStore(connection, prefix), 150);
 }
 // Policy Engine (Phase 10): right before every provider call the action is decided again on current truth — kill switch,
 // suppression, the requester's permission/autonomy, the approval. Anything but ACT stops the call.
 // Campaign emails also check their campaign (active? prospect still in the sequence?) first; conversation replies check
-// the conversation (taken over? a newer message? unsubscribed?).
-const actions = externalActionHandlers(db, { executors, revalidate: withConversationGuard(withCampaignGuard(createPolicyRevalidator())) });
+// the conversation (taken over? a newer message? unsubscribed?); calendar actions check the meeting still wants that time.
+const actions = externalActionHandlers(db, { executors, revalidate: withMeetingGuard(withConversationGuard(withCampaignGuard(createPolicyRevalidator()))) });
 
 const policySweepJob: JobHandler = {
   timeoutMs: 60_000,
@@ -110,13 +116,18 @@ const campaignPrepare: JobHandler = {
   timeoutMs: 3 * 60_000,
   handle: async (data) => ({ outcome: await prepareStep(outreach, data as unknown as CampaignStepJobData) }),
 };
-// Every outbound action that changes state: campaign messages and conversation replies follow (others are ignored).
+// Every outbound action that changes state: campaign messages, conversation replies and meetings follow (others are ignored).
 const campaignSettled: JobHandler = {
   timeoutMs: 30_000,
   handle: async (data) => {
     const { externalActionId } = data as unknown as { externalActionId: string };
-    return { outcome: await settleCampaignAction(db, externalActionId), reply: await settleConversationReply(db, externalActionId) };
+    return { outcome: await settleCampaignAction(db, externalActionId), reply: await settleConversationReply(db, externalActionId), meeting: await settleMeetingAction(db, externalActionId) };
   },
+};
+// Meetings (Phase 14): calendar-side changes reconciled, briefs prepared shortly before meetings.
+const meetingSweepJob: JobHandler = {
+  timeoutMs: 3 * 60_000,
+  handle: async () => meetingSweep(outreach),
 };
 // Replies, unsubscribes and bounces stop the sequence; polling the mailbox is how we notice them.
 const mailboxSync: JobHandler = {
@@ -216,6 +227,7 @@ const workers = [
       [JOBS.policySweep]: policySweepJob,
       [JOBS.campaignSweep]: campaignSweep,
       [JOBS.conversationSweep]: conversationSweep,
+      [JOBS.meetingSweep]: meetingSweepJob,
     },
   }),
   createQueueWorker({
@@ -328,6 +340,10 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('conversation-sweep', { every: 5 * 60_000 }, { name: JOBS.conversationSweep, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register conversation sweep schedule'));
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('meeting-sweep', { every: 5 * 60_000 }, { name: JOBS.meetingSweep, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register meeting sweep schedule'));
 producer
   .queue(QUEUES.inbound)
   .upsertJobScheduler('mailbox-sync', { every: 2 * 60_000 }, { name: JOBS.mailboxSync, data: { correlationId: 'scheduler' } })
