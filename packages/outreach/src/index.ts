@@ -13,3 +13,7 @@ export * from './conversation-commands.js';
 export * from './conversation-engine.js';
 export * from './conversation-inbound.js';
 export * from './conversation-rules.js';
+// Qualification + opportunities (Phase 13, docs/17 §87-92, screen #7): deals from commercial evidence, stage commands
+// with requirements and history, evidence-based health and next action, explicit won / lost.
+export * from './opportunities.js';
+export * from './opportunity-rules.js';

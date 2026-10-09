@@ -115,6 +115,17 @@ export interface EventPayloads {
   ConversationNoteAdded: { conversationId: string; messageId: string };
   /** A stated fact was rejected by a person (applied facts are part of ConversationMessageClassified). */
   ConversationContextCorrected: { conversationId: string; extractionId: string; field: string };
+  // opportunities (docs/17 §87-92) — values in minor units, never conversation text
+  OpportunityCreated: { opportunityId: string; companyId: string; conversationId: string | null; source: string };
+  /** Commercial evidence was noticed in a conversation but not acted on — a person decides (aggregate: the conversation). */
+  OpportunityProposed: { conversationId: string; companyId: string; strength: string; reason: string };
+  OpportunityUpdated: { opportunityId: string; changedFields: string[] };
+  OpportunityStageChanged: { opportunityId: string; from: string; to: string; reason: string | null };
+  OpportunityWon: { opportunityId: string; companyId: string; amountMinor: number; currency: string };
+  OpportunityLost: { opportunityId: string; companyId: string; reason: string; revisitAt: string | null };
+  OpportunityReopened: { opportunityId: string; from: string; to: string; reason: string };
+  OpportunityStakeholderAdded: { opportunityId: string; name: string; role: string; source: string };
+  QualificationUpdated: { opportunityId: string; status: string; changedKeys: string[] };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -179,7 +190,8 @@ export type AggregateType =
   | 'CAMPAIGN_ENROLLMENT'
   | 'CAMPAIGN_MESSAGE'
   | 'MAILBOX_MESSAGE'
-  | 'CONVERSATION';
+  | 'CONVERSATION'
+  | 'OPPORTUNITY';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -206,7 +218,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -360,6 +372,15 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   ConversationAssigned: entity('conversations', 'CONVERSATION', 'The conversation was assigned to a person (or unassigned)'),
   ConversationNoteAdded: entity('conversations', 'CONVERSATION', 'An internal note was added (never sent to the prospect)'),
   ConversationContextCorrected: entity('conversations', 'CONVERSATION', 'A person rejected a fact taken from the conversation'),
+  OpportunityCreated: entity('sales', 'OPPORTUNITY', 'A deal was created from commercial evidence (or by a person)'),
+  OpportunityProposed: entity('sales', 'CONVERSATION', 'Commercial evidence was noticed in a conversation — a person may create a deal'),
+  OpportunityUpdated: entity('sales', 'OPPORTUNITY', 'Deal fields changed (field names, not values)'),
+  OpportunityStageChanged: entity('sales', 'OPPORTUNITY', 'The deal moved stage through the change-stage command'),
+  OpportunityWon: entity('sales', 'OPPORTUNITY', 'The deal was won — the company became a customer and prospecting stopped'),
+  OpportunityLost: entity('sales', 'OPPORTUNITY', 'The deal was lost with a reason (maybe a revisit date)'),
+  OpportunityReopened: entity('sales', 'OPPORTUNITY', 'A won or lost deal was reopened with a reason'),
+  OpportunityStakeholderAdded: entity('sales', 'OPPORTUNITY', 'Someone involved in the decision was added or suggested'),
+  QualificationUpdated: entity('sales', 'OPPORTUNITY', 'Known / unknown qualification changed'),
   OutboundStateChanged: entity('policy', 'WORKSPACE', 'Outbound was paused, emergency-stopped or resumed (kill switch)'),
   PolicyUpdated: entity('policy', 'WORKSPACE', 'The autonomy level or a configurable rule changed (new policy version)'),
   SuppressionAdded: entity('policy', 'SUPPRESSION', 'A contact, domain, person or company was put on the do-not-contact list'),

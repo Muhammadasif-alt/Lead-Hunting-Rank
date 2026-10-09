@@ -65,6 +65,7 @@ enum EntityType {
   CONVERSATION
   CONVERSATION_MESSAGE
   CONVERSATION_REPLY
+  OPPORTUNITY
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -156,6 +157,12 @@ model Workspace {
   messageClassifications MessageClassification[]
   extractionCandidates   ExtractionCandidate[]
   conversationReplies    ConversationReply[]
+  opportunities          Opportunity[]
+  opportunityHistory     OpportunityStageHistory[]
+  stakeholders           OpportunityStakeholder[]
+  opportunityLosses      OpportunityLoss[]
+  qualifications         Qualification[]
+  qualificationAnswers   QualificationAnswer[]
 }
 
 enum UserStatus {
@@ -794,20 +801,22 @@ enum StageType {
 }
 
 model PipelineStage {
-  id          String    @id @default(uuid()) @db.Uuid
-  workspaceId String    @db.Uuid
-  pipelineId  String    @db.Uuid
+  id          String        @id @default(uuid()) @db.Uuid
+  workspaceId String        @db.Uuid
+  pipelineId  String        @db.Uuid
   name        String
   position    Int
-  stageType   StageType @default(OPEN)
-  isClosed    Boolean   @default(false)
-  isWon       Boolean   @default(false)
-  isLost      Boolean   @default(false)
-  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  stageType   StageType     @default(OPEN)
+  semantic    StageSemantic
+  isClosed    Boolean       @default(false)
+  isWon       Boolean       @default(false)
+  isLost      Boolean       @default(false)
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime      @updatedAt @db.Timestamptz(3)
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  pipeline  Pipeline  @relation(fields: [workspaceId, pipelineId], references: [workspaceId, id], onDelete: Cascade)
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  pipeline      Pipeline      @relation(fields: [workspaceId, pipelineId], references: [workspaceId, id], onDelete: Cascade)
+  opportunities Opportunity[]
 
   @@unique([pipelineId, position])
   @@unique([pipelineId, name])
@@ -2511,6 +2520,10 @@ model Conversation {
   /// Structured context from the conversation (need, timeline, budget, referral, return date…) — each value with the
   /// message it came from. History lives in ExtractionCandidate; the latest statement wins.
   context              Json              @default("{}")
+  /// The deal this conversation belongs to (Phase 13), once one exists.
+  opportunityId        String?           @db.Uuid
+  /// Commercial evidence the rules noticed but did not act on: { strength, reason, quote, messageId, at }.
+  commercialSignal     Json?
   assignedToId         String?           @db.Uuid
   takenOverById        String?           @db.Uuid
   takenOverAt          DateTime?         @db.Timestamptz(3)
@@ -2696,4 +2709,237 @@ model ConversationReply {
 
   @@unique([workspaceId, id])
   @@index([conversationId, createdAt])
+}
+
+// ───────────────────────────── Qualification + Opportunities (Phase 13) ─────────────────────────────
+
+/// What a stage means to the system, whatever its label (screen #7 §1). Guards and health use this, never the name.
+enum StageSemantic {
+  NEW
+  DISCOVERY
+  QUALIFIED
+  MEETING
+  PROPOSAL
+  NEGOTIATION
+  WON
+  LOST
+  NURTURE
+}
+
+enum OpportunityStatus {
+  OPEN
+  WON
+  LOST
+  ARCHIVED
+}
+
+/**
+ * A specific potential commercial outcome with one company (screen #7 §2: Company = account, Opportunity = deal). Born
+ * from commercial evidence, not from every positive reply. Stage changes only through commands that check the stage's
+ * requirements and write history; WON and LOST are explicit, with evidence and a reason.
+ */
+model Opportunity {
+  id                 String            @id @default(uuid()) @db.Uuid
+  workspaceId        String            @db.Uuid
+  companyId          String            @db.Uuid
+  primaryPersonId    String?           @db.Uuid
+  name               String
+  /// What they would buy (service / offer), in plain words.
+  service            String?
+  pipelineId         String            @db.Uuid
+  stageId            String            @db.Uuid
+  status             OpportunityStatus @default(OPEN)
+  /// Estimated value in minor units; null = not known yet (never invented).
+  amountMinor        Int?
+  currency           String            @default("USD") @db.Char(3)
+  ownerUserId        String?           @db.Uuid
+  /// CONVERSATION / MANUAL / REFERRAL
+  source             String            @default("MANUAL")
+  conversationId     String?           @db.Uuid
+  campaignId         String?           @db.Uuid
+  /// Why it exists: the commercial evidence it was created from.
+  originReason       String?
+  originQuote        String?
+  createdByType      ActorType
+  createdById        String?
+  /// A person's own next step; otherwise the rules suggest one.
+  nextActionOverride String?
+  nextActionDueAt    DateTime?         @db.Timestamptz(3)
+  stageEnteredAt     DateTime          @default(now()) @db.Timestamptz(3)
+  lastActivityAt     DateTime          @default(now()) @db.Timestamptz(3)
+  closedAt           DateTime?         @db.Timestamptz(3)
+  wonAmountMinor     Int?
+  wonNote            String?
+  createdAt          DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime          @updatedAt @db.Timestamptz(3)
+  version            Int               @default(1)
+
+  workspace     Workspace                 @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  stage         PipelineStage             @relation(fields: [stageId], references: [id], onDelete: Restrict)
+  history       OpportunityStageHistory[]
+  stakeholders  OpportunityStakeholder[]
+  losses        OpportunityLoss[]
+  qualification Qualification?
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, status, stageId])
+  @@index([workspaceId, companyId])
+  @@index([workspaceId, ownerUserId])
+}
+
+/**
+ * Every stage change, with who and why (docs/06 §63-72: mandatory for cycle time and bottleneck analysis).
+ */
+model OpportunityStageHistory {
+  id            String         @id @default(uuid()) @db.Uuid
+  workspaceId   String         @db.Uuid
+  opportunityId String         @db.Uuid
+  fromStageId   String?        @db.Uuid
+  toStageId     String         @db.Uuid
+  fromSemantic  StageSemantic?
+  toSemantic    StageSemantic
+  actorType     ActorType
+  actorId       String?
+  reason        String?
+  changedAt     DateTime       @default(now()) @db.Timestamptz(3)
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  opportunity Opportunity @relation(fields: [workspaceId, opportunityId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([opportunityId, changedAt])
+  @@index([workspaceId, toSemantic, changedAt])
+}
+
+enum StakeholderRole {
+  DECISION_MAKER
+  INFLUENCER
+  USER
+  CHAMPION
+  UNKNOWN
+}
+
+enum StakeholderStatus {
+  SUGGESTED
+  KNOWN
+  ENGAGED
+  NOT_CONTACTED
+}
+
+/**
+ * Who is involved (screen #7 §9-10). A stakeholder the prospect mentioned ("my partner") may have no person record yet.
+ */
+model OpportunityStakeholder {
+  id            String            @id @default(uuid()) @db.Uuid
+  workspaceId   String            @db.Uuid
+  opportunityId String            @db.Uuid
+  personId      String?           @db.Uuid
+  name          String
+  title         String?
+  role          StakeholderRole   @default(UNKNOWN)
+  influence     String            @default("UNKNOWN")
+  status        StakeholderStatus @default(KNOWN)
+  /// PRIMARY / CONVERSATION / MANUAL
+  source        String            @default("MANUAL")
+  quote         String?
+  messageId     String?           @db.Uuid
+  createdAt     DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime          @updatedAt @db.Timestamptz(3)
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  opportunity Opportunity @relation(fields: [workspaceId, opportunityId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([opportunityId, personId])
+  @@index([opportunityId])
+}
+
+enum LossReason {
+  PRICE
+  TIMING
+  COMPETITOR
+  NO_BUDGET
+  NO_NEED
+  INTERNAL_DECISION
+  NO_RESPONSE
+  TECHNICAL_FIT
+  WRONG_PROSPECT
+  OTHER
+}
+
+/**
+ * Why a deal was lost (screen #7 §36-37) — a reason is required; a revisit date turns "lost" into "later".
+ */
+model OpportunityLoss {
+  id            String     @id @default(uuid()) @db.Uuid
+  workspaceId   String     @db.Uuid
+  opportunityId String     @db.Uuid
+  reasonCode    LossReason
+  details       String?
+  competitor    String?
+  revisitAt     DateTime?  @db.Timestamptz(3)
+  evidenceQuote String?
+  /// The reason the rules suggested (from the conversation), if a person confirmed it.
+  suggested     Boolean    @default(false)
+  decidedById   String?    @db.Uuid
+  lostAt        DateTime   @default(now()) @db.Timestamptz(3)
+  /// Set when the deal was reopened (history kept).
+  reopenedAt    DateTime?  @db.Timestamptz(3)
+
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  opportunity Opportunity @relation(fields: [workspaceId, opportunityId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([opportunityId, lostAt])
+  @@index([workspaceId, reasonCode])
+}
+
+enum QualificationStatus {
+  UNQUALIFIED
+  PARTIAL
+  QUALIFIED
+}
+
+/**
+ * One qualification per opportunity (screen #7 §6-8): known vs unknown, every answer with its source.
+ */
+model Qualification {
+  id            String              @id @default(uuid()) @db.Uuid
+  workspaceId   String              @db.Uuid
+  opportunityId String              @unique @db.Uuid
+  status        QualificationStatus @default(UNQUALIFIED)
+  updatedAt     DateTime            @updatedAt @db.Timestamptz(3)
+  createdAt     DateTime            @default(now()) @db.Timestamptz(3)
+
+  workspace   Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  opportunity Opportunity           @relation(fields: [workspaceId, opportunityId], references: [workspaceId, id], onDelete: Cascade)
+  answers     QualificationAnswer[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, opportunityId])
+}
+
+/**
+ * One answer (need, timeline, budget, authority, current solution, decision process, project). From the conversation
+ * (with the prospect's exact words) or entered by a person. The current answer has supersededAt = null; nothing is
+ * overwritten. An AI-read answer counts as known but stays unverified until a person confirms it.
+ */
+model QualificationAnswer {
+  id              String          @id @default(uuid()) @db.Uuid
+  workspaceId     String          @db.Uuid
+  qualificationId String          @db.Uuid
+  key             String
+  value           String
+  confidence      ConfidenceLevel @default(MEDIUM)
+  /// CONVERSATION / MANUAL
+  source          String
+  sourceMessageId String?         @db.Uuid
+  quote           String?
+  verified        Boolean         @default(false)
+  verifiedById    String?         @db.Uuid
+  createdById     String?
+  supersededAt    DateTime?       @db.Timestamptz(3)
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+
+  workspace     Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  qualification Qualification @relation(fields: [workspaceId, qualificationId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([qualificationId, key, supersededAt])
 }

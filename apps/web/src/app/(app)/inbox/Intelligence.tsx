@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Building2, Compass, History, Lightbulb, Loader, Megaphone, X } from "lucide-react";
+import { ArrowRight, Building2, Compass, History, Lightbulb, Loader, Megaphone, Target, X } from "lucide-react";
 import { CATEGORY_INFO, EXTRACTION_INFO, INTENT_INFO, MODE_INFO, OBJECTION_INFO, STAGE_INFO, type ExtractionField, type ObjectionType, type PermissionKey } from "@revenue-os/shared";
 import { errorMessage, post } from "@/lib/api";
 import { CATEGORY_STYLE, intentStyle, TIMELINE_LABEL, type ConversationDetail } from "@/lib/conversations";
@@ -81,6 +81,8 @@ export function Intelligence({ detail, onChange }: { detail: ConversationDetail;
           </label>
         )}
       </section>
+
+      <OpportunityCard detail={detail} canCreate={can("opportunity.create")} />
 
       {error && <div className="card border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">{error}</div>}
 
@@ -217,6 +219,58 @@ export function Intelligence({ detail, onChange }: { detail: ConversationDetail;
         </ol>
       </section>
     </div>
+  );
+}
+
+/** Deal from this conversation (Phase 13): a link once it exists; otherwise the commercial evidence the rules noticed. */
+function OpportunityCard({ detail, canCreate }: { detail: ConversationDetail; canCreate: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const o = detail.opportunity;
+  const signal = detail.commercialSignal;
+  if (!o && !signal && !canCreate) return null;
+  async function create() {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await post<{ id: string }>("/opportunities/from-conversation", { conversationId: detail.conversation.id });
+      window.location.href = `/opportunities/${r.id}`;
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  }
+  return (
+    <section className={`card p-4 ${signal && !o ? "border-tone-sales/30 bg-tone-sales-soft/40" : ""}`} data-tone="sales">
+      <div className="eyebrow mb-1.5 flex items-center gap-1.5 text-[11px]">
+        <Target className="size-3.5 text-tone" /> Opportunity
+      </div>
+      {o ? (
+        <Link href={`/opportunities/${o.id}`} className="block text-sm">
+          <span className="font-medium text-accent hover:underline">{o.name}</span>
+          <span className="block text-xs text-muted">{o.status === "OPEN" ? o.stage : o.status.toLowerCase()} — its qualification updates from this conversation</span>
+        </Link>
+      ) : signal ? (
+        <>
+          <p className="text-sm font-medium">Potential opportunity</p>
+          <p className="text-xs text-muted">{signal.reason}</p>
+          {signal.quote && <p className="mt-1 text-[11px] italic text-faint">“{signal.quote}”</p>}
+          {canCreate && (
+            <button type="button" className="btn btn-primary mt-2 w-full justify-center text-xs" disabled={busy} onClick={() => void create()}>
+              {busy ? <Loader className="size-3.5 animate-spin" /> : <Target className="size-3.5" />} Create opportunity
+            </button>
+          )}
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-muted">No commercial need stated yet — interest alone isn’t a deal.</p>
+          <button type="button" className="mt-1 text-xs text-accent hover:underline" disabled={busy} onClick={() => void create()}>
+            Create one anyway
+          </button>
+        </>
+      )}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+    </section>
   );
 }
 

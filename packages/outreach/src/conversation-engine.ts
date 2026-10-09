@@ -6,6 +6,7 @@ import { addSuppression, requestExternalAction } from '@revenue-os/policy';
 import { INTENT_INFO, NON_HUMAN_INTENTS, readMessage, type Intent, type MessageReading } from '@revenue-os/shared';
 import { categorize, nextStage, priorityOf, REPLY_INTENTS, waitingAfter } from './conversation-rules.js';
 import type { OutreachDeps } from './engine.js';
+import { opportunityFromConversationTx } from './opportunities.js';
 
 const DAY_MS = 86_400_000;
 const system = (workspaceId: string): ServiceContext => ({ workspaceId, actor: { type: 'SYSTEM', id: null } });
@@ -208,6 +209,12 @@ async function applyReading(tx: Tx, conv: Conversation, messageId: string, r: Me
     // A newer message makes unsent AI drafts and pending AI replies obsolete.
     await tx.conversationReply.updateMany({ where: { conversationId: conv.id, status: 'DRAFT', author: 'AI', inReplyToMessageId: { not: messageId } }, data: { status: 'SUPERSEDED', statusReason: 'A newer message arrived' } });
     await cancelPendingReplies(tx, ctx, conv.id, 'A newer message arrived — the reply was out of date', { aiOnly: true, exceptMessageId: messageId });
+  }
+
+  // Phase 13: stated facts feed the deal's qualification; strong commercial evidence may start a deal.
+  if (human && intent !== 'UNSUBSCRIBE') {
+    const updated = await tx.conversation.findUniqueOrThrow({ where: { id: conv.id } });
+    await opportunityFromConversationTx(tx, updated, r.extracted.map((f) => ({ ...f, messageId, confidence: r.confidence })), intent, now);
   }
 
   await recordEvent(tx, ctx, 'ConversationMessageClassified', conv.id, { conversationId: conv.id, messageId, primaryIntent: intent, method, needsHuman: r.needsHuman });
@@ -426,6 +433,7 @@ export async function settleConversationReply(db: PrismaClient, externalActionId
       where: { id: c.id },
       data: { ...state, category: categorize(state, now), escalationReason: null, priority, priorityReasons: reasons, lastOutboundAt: sentAt, lastMessageAt: sentAt > c.lastMessageAt ? sentAt : c.lastMessageAt, threadRef: c.threadRef ?? meta.threadId ?? null, version: { increment: 1 } },
     });
+    if (c.opportunityId) await tx.opportunity.updateMany({ where: { id: c.opportunityId, status: 'OPEN' }, data: { lastActivityAt: sentAt } });
     await recordEvent(tx, ctx, 'ConversationReplySent', c.id, { conversationId: c.id, replyId: reply.id, externalActionId, author: reply.author });
     return 'SENT';
   }, TX);

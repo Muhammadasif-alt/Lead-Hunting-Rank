@@ -144,6 +144,8 @@ export interface ConversationDetail {
   factHistory: { id: string; field: string; value: string; quote: string; status: string; confidence: string; messageId: string; createdAt: string }[];
   timeline: { id: string; type: string; payload: Record<string, unknown>; actorType: string; actorName: string | null; at: string }[];
   members: { id: string; name: string }[];
+  opportunity: { id: string; name: string; status: string; stage: string } | null;
+  commercialSignal: { strength: "STRONG" | "MODERATE"; reason: string; quote: string | null } | null;
 }
 
 /** Category look: the inbox is an email area (blue tone) but each bucket reads at a glance. */

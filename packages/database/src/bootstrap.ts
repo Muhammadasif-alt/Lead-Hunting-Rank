@@ -19,14 +19,17 @@ const ROLE_INFO: Record<RoleKey, { name: string; description: string }> = {
   VIEWER: { name: 'Viewer', description: 'Read-only access.' },
 };
 
+/** Stage labels can change; the semantic meaning is what guards, health and analytics use (screen #7 §1). */
 const DEFAULT_PIPELINE_STAGES = [
-  { name: 'New', stageType: 'OPEN' },
-  { name: 'Qualified', stageType: 'OPEN' },
-  { name: 'Meeting booked', stageType: 'OPEN' },
-  { name: 'Proposal', stageType: 'OPEN' },
-  { name: 'Negotiation', stageType: 'OPEN' },
-  { name: 'Won', stageType: 'WON' },
-  { name: 'Lost', stageType: 'LOST' },
+  { name: 'New', stageType: 'OPEN', semantic: 'NEW' },
+  { name: 'Discovery', stageType: 'OPEN', semantic: 'DISCOVERY' },
+  { name: 'Qualified', stageType: 'OPEN', semantic: 'QUALIFIED' },
+  { name: 'Meeting', stageType: 'OPEN', semantic: 'MEETING' },
+  { name: 'Proposal', stageType: 'OPEN', semantic: 'PROPOSAL' },
+  { name: 'Negotiation', stageType: 'OPEN', semantic: 'NEGOTIATION' },
+  { name: 'Won', stageType: 'WON', semantic: 'WON' },
+  { name: 'Lost', stageType: 'LOST', semantic: 'LOST' },
+  { name: 'Nurture', stageType: 'OPEN', semantic: 'NURTURE' },
 ] as const;
 
 /** Hard safety rules (docs/10 §35-36). Shown read-only; enforced in code by @revenue-os/policy. */
@@ -94,6 +97,7 @@ export async function provisionWorkspaceDefaults(db: Db, workspaceId: string): P
       name: s.name,
       position,
       stageType: s.stageType,
+      semantic: s.semantic,
       isClosed: s.stageType !== 'OPEN',
       isWon: s.stageType === 'WON',
       isLost: s.stageType === 'LOST',

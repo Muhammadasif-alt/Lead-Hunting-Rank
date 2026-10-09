@@ -20,7 +20,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 10 | Policy Engine | ✅ done 2026-10-06 |
 | 11 | Campaigns + Outreach | ✅ done 2026-10-07 |
 | 12 | Conversations + AI Inbox | ✅ done 2026-10-09 |
-| 13 … 24 | Qualification + Opportunities → … → Production + autonomy rollout | ⬜ |
+| 13 | Qualification + Opportunities | ✅ done 2026-10-09 |
+| 14 … 24 | Calendar + Meetings → … → Production + autonomy rollout | ⬜ |
 
 Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy Engine, §67-76 Phase 11 Campaigns, … §147-155 Phase 24). The short list in docs/17 §1 has no separate policy phase, so its later numbers are one lower.
 
@@ -190,6 +191,18 @@ Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy E
 - Deferred by plan: Knowledge Base answers + pricing engine (Phase 15 / pricing policy), meeting booking (Phase 14), opportunities from conversations (Phase 13), natural-language search, catch-me-up digest, SLA notifications, multi-channel
 - After pulling: pnpm install, pnpm db:deploy, rebuild (pnpm build)
 - Note: the full pnpm test can time out the Phase 4 e2e suite on a low-RAM machine; it passes on its own (node --test apps/api/dist/modules/system/phase4.pipeline.e2e.test.js)
+
+## Phase 13 — Definition of Done
+- [x] Schema: Opportunity (one company, many deals; status OPEN / WON / LOST; value, close date, owner, origin conversation), PipelineStage.semantic (New → Discovery → Qualified → Meeting → Proposal → Negotiation, Won, Lost, Nurture), Qualification + QualificationAnswer (known vs unknown, exact quote + message, verified by a person), OpportunityStageHistory (who, why, from → to), OpportunityStakeholder (suggested from "my partner", confirmed by a person), OpportunityLoss (reason, note, revisit date); Conversation.opportunityId + commercialSignal
+- [x] Rules decide (never the model): commercial signal (STRONG = need + timeline / budget / pricing / meeting; MODERATE otherwise), stage requirements (no Qualified without a need, no Proposal without a contact, …), deal health (Healthy / At risk / Stalled from evidence — no win probability), next best action with why, qualification status, suggested loss reason
+- [x] From conversations: STRONG signal auto-creates the deal at L2+; otherwise "Potential opportunity" in the inbox with the quote, one click to create. Facts from replies fill qualification with their quotes; mentioned people become suggested stakeholders
+- [x] Won → company becomes a customer, live cold sequences removed, excluded from future audiences; companies with an open deal are excluded too. Lost with a revisit date → conversation goes to Nurture until then. Reopen allowed
+- [x] API: GET /opportunities (pipeline / priority / mine / closed views, summary), POST /opportunities, POST /opportunities/from-conversation, GET|PATCH /opportunities/:id, POST :id/stage | won | lost | reopen, qualification answers (set / confirm), stakeholders (add / update / remove)
+- [x] Screens: Opportunities board (Kanban with drag & drop, stacked on mobile, list views, totals by stage, health badges), Opportunity detail (stage path with blocked reasons, next action, health, qualification with quotes, stakeholders, stage history, details, origin conversation, timeline, Won / Lost dialogs); Inbox shows the deal or the potential opportunity. Works at 390px
+- [x] DoD tests + live run: strong reply → deal created from the conversation, qualified (need, timeline, decision process, current solution) with quotes, partner suggested as stakeholder, New → Qualified → Meeting, value set; stage guard blocks a jump without evidence; won stops outreach; lost with revisit nurtures
+- Deferred by plan: meetings + booking (Phase 14), proposals / pricing engine, commitments + tasks, AI deal coach, natural-language search, forecasting
+- After pulling: pnpm install, pnpm db:deploy, rebuild (pnpm build). The migration replaces the default pipeline stages with the nine semantic stages
+- Note: package suites and the Phase 12 / 13 API suites pass on their own; the full pnpm test was not re-run this phase
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

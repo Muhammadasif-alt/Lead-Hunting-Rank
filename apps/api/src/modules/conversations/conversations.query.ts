@@ -104,6 +104,7 @@ export class ConversationsQuery {
       db.workspaceMember.findMany({ where: { workspaceId, status: 'ACTIVE' }, select: { user: { select: { id: true, name: true } } } }),
       db.companyAssessment.findFirst({ where: { workspaceId, companyId: c.companyId, dimension: 'PRIORITY', supersededAt: null }, select: { level: true, reasons: true } }),
     ]);
+    const opportunity = c.opportunityId ? await db.opportunity.findFirst({ where: { id: c.opportunityId, workspaceId }, select: { id: true, name: true, status: true, stage: { select: { name: true, semantic: true } } } }) : null;
     const actionIds = replies.map((r) => r.externalActionId).filter((x): x is string => !!x);
     const actions = actionIds.length ? await db.externalAction.findMany({ where: { id: { in: actionIds } }, select: { id: true, status: true, statusReason: true, approvalRequestId: true, resumeAt: true } }) : [];
     const userIds = [...new Set([...messages.map((m) => m.authorUserId), ...replies.map((r) => r.authorUserId), c.takenOverById, ...events.map((e) => e.actorId)].filter((x): x is string => !!x))];
@@ -208,6 +209,8 @@ export class ConversationsQuery {
       factHistory: extractions.map((x) => ({ id: x.id, field: x.field, value: x.value, quote: x.quote, status: x.status, confidence: x.confidence, messageId: x.messageId, createdAt: x.createdAt })),
       timeline: events.map((e) => ({ id: e.id, type: e.eventType, payload: e.payload, actorType: e.actorType, actorName: nameOf(e.actorId), at: e.occurredAt })),
       members: members.map((m) => m.user),
+      opportunity: opportunity ? { id: opportunity.id, name: opportunity.name, status: opportunity.status, stage: opportunity.stage.name } : null,
+      commercialSignal: (c.commercialSignal ?? null) as { strength: string; reason: string; quote: string | null } | null,
     };
   }
 }

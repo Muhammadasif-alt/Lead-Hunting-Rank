@@ -60,8 +60,11 @@ const firstNameOf = (p: { firstName: string | null; fullName: string }) => p.fir
  */
 export async function findAudience(db: Db, workspaceId: string, filter: AudienceFilter, opts: { campaignId?: string; limit?: number; now?: Date } = {}): Promise<AudienceResult> {
   const now = opts.now ?? new Date();
-  const where: Prisma.CompanyWhereInput = { workspaceId, mergedIntoId: null, status: { not: 'ARCHIVED' } };
+  // Customers and companies with an open deal are never cold-prospected (docs/10 "existing customer protected").
+  const where: Prisma.CompanyWhereInput = { workspaceId, mergedIntoId: null, status: { notIn: ['ARCHIVED', 'CUSTOMER'] } };
   const and: Prisma.CompanyWhereInput[] = [];
+  const inDeal = await db.opportunity.findMany({ where: { workspaceId, status: 'OPEN' }, select: { companyId: true }, distinct: ['companyId'] });
+  if (inDeal.length) and.push({ id: { notIn: inDeal.map((o) => o.companyId) } });
   if (filter.marketId) {
     const obs = await db.discoveryObservation.findMany({ where: { workspaceId, mission: { marketId: filter.marketId }, companyId: { not: null } }, select: { companyId: true }, distinct: ['companyId'] });
     and.push({ id: { in: obs.map((o) => o.companyId!) } });

@@ -10,3 +10,4 @@ export * from './discovery.js';
 export * from './research.js';
 export * from './policy.js';
 export * from './conversations.js';
+export * from './opportunities.js';
