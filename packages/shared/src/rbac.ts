@@ -35,7 +35,11 @@ export const PERMISSIONS = {
   'approval.decide': { class: 'D', description: 'Approve or reject requests (bounded by authority limits)' },
   'task.manage': { class: 'B', description: 'Create and complete tasks' },
   'knowledge.read': { class: 'A', description: 'Read the knowledge base' },
+  'knowledge.manage': { class: 'B', description: 'Draft knowledge, upload documents and answer knowledge gaps (not used by AI until approved)' },
   'knowledge.approve': { class: 'E', description: 'Publish knowledge used by AI' },
+  'knowledge.approve_commercial': { class: 'E', description: 'Publish pricing, policies and claims (commercial authority)' },
+  'memory.read': { class: 'A', description: 'Read AI memory, commitments and relationships' },
+  'memory.manage': { class: 'B', description: 'Confirm, correct or invalidate memories; manage commitments and relationships' },
   'policy.read': { class: 'A', description: 'View policies' },
   'policy.manage': { class: 'E', description: 'Change policies and autonomy levels' },
   'integration.read': { class: 'A', description: 'View integrations, their health and usage' },
@@ -60,6 +64,7 @@ const READ: PermissionKey[] = [
   'conversation.read',
   'opportunity.read',
   'knowledge.read',
+  'memory.read',
   'policy.read',
   'integration.read',
 ];
@@ -67,8 +72,8 @@ const READ: PermissionKey[] = [
 /** Default role → permission grants seeded into every workspace (docs/10 §8-14). */
 export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
   OWNER: PERMISSION_KEYS,
-  // Owner-only: workspace/ownership/security, bulk export, resuming after an emergency stop.
-  ADMIN: PERMISSION_KEYS.filter((p) => !['workspace.manage', 'data.export', 'outbound.resume'].includes(p)),
+  // Owner-only: workspace/ownership/security, bulk export, resuming after an emergency stop, publishing pricing/policies/claims.
+  ADMIN: PERMISSION_KEYS.filter((p) => !['workspace.manage', 'data.export', 'outbound.resume', 'knowledge.approve_commercial'].includes(p)),
   SALES: [
     ...READ,
     'company.update',
@@ -85,8 +90,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     'approval.decide',
     'task.manage',
     'outbound.pause',
+    'knowledge.manage',
+    'memory.manage',
   ],
-  RESEARCHER: [...READ, 'company.update', 'company.merge', 'company.research', 'evidence.manage', 'market.create', 'market.run', 'task.manage'],
+  RESEARCHER: [...READ, 'company.update', 'company.merge', 'company.research', 'evidence.manage', 'market.create', 'market.run', 'task.manage', 'memory.manage'],
   VIEWER: READ,
 };
 

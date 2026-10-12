@@ -672,6 +672,52 @@ function Brief({ d, busy, onRefresh }: { d: MeetingDetail; busy: string | null; 
               </ul>
             </Block>
           )}
+          {(b.content.commitments.length > 0 || (b.content.remembered?.length ?? 0) > 0) && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {b.content.commitments.length > 0 && (
+                <Block title="Promises">
+                  <ul className="space-y-0.5">
+                    {b.content.commitments.map((c) => (
+                      <li key={c} className={c.includes("(overdue)") ? "text-danger" : ""}>
+                        • {c}
+                      </li>
+                    ))}
+                  </ul>
+                </Block>
+              )}
+              {(b.content.remembered?.length ?? 0) > 0 && (
+                <Block title="Remembered">
+                  <ul className="space-y-0.5">
+                    {b.content.remembered!.map((m) => (
+                      <li key={`${m.label}-${m.value}`}>
+                        <span className="font-medium">{m.label}:</span> {m.value}
+                        {m.origin === "AI_INFERENCE" && <span className="text-xs text-amber"> (AI guess)</span>}
+                      </li>
+                    ))}
+                  </ul>
+                </Block>
+              )}
+            </div>
+          )}
+          {(b.content.relevantKnowledge?.length ?? 0) > 0 && (
+            <Block title="Answers to their questions (approved knowledge)">
+              <ul className="space-y-2">
+                {b.content.relevantKnowledge!.map((k) => (
+                  <li key={k.question}>
+                    <span className="font-medium">“{k.question}”</span>
+                    {k.decision === "ANSWER" && k.answer ? (
+                      <span className="block text-muted">
+                        {k.answer}
+                        {k.source && <span className="text-xs text-faint"> — {k.source}</span>}
+                      </span>
+                    ) : (
+                      <span className="block text-xs text-amber">Needs you: {k.reason}</span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </Block>
+          )}
           {(b.content.stakeholders.length > 0 || b.content.signals.length > 0 || b.content.previousMeetings.length > 0) && (
             <div className="grid gap-4 sm:grid-cols-3">
               {b.content.stakeholders.length > 0 && (

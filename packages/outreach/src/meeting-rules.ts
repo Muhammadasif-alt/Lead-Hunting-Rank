@@ -100,6 +100,11 @@ export interface BriefInput {
   conversationSummary: string | null;
   lastResearchAt: Date | null;
   now: Date;
+  /** Phase 15: open promises (ours and theirs), scoped memory, memory issues, and approved answers to what they asked. */
+  commitments?: { direction: string; title: string; dueAt: Date | null }[];
+  memories?: { label: string; value: string; origin: string }[];
+  memoryIssues?: { conflicts: string[]; stale: number };
+  knowledge?: { question: string; decision: 'ANSWER' | 'ESCALATE'; answer: string | null; source: string | null; reason: string }[];
 }
 
 export interface BriefContent {
@@ -119,6 +124,10 @@ export interface BriefContent {
   dontAskAgain: string[];
   objective: string;
   commitments: string[];
+  /** What memory adds (preferences, current tools, roles) — with where it came from. */
+  remembered?: { label: string; value: string; origin: string }[];
+  /** Screen #13 §84: what approved knowledge says about what they asked (or that a person must answer it). */
+  relevantKnowledge?: { question: string; decision: 'ANSWER' | 'ESCALATE'; answer: string | null; source: string | null; reason: string }[];
 }
 
 const ASK: Record<QualificationKey, string> = {
@@ -177,7 +186,14 @@ export function buildBrief(b: BriefInput): { content: BriefContent; gaps: string
   }
   if (b.meeting.timezoneConfidence === 'LOW') gaps.push('Their time zone is a guess — confirm it at the start');
   if (!b.people.some((p) => p.side === 'EXTERNAL')) gaps.push('No contact person is known');
-  gaps.push('Commitments (what we or they promised) are tracked from Phase 15 — check the conversation');
+  for (const c of b.memoryIssues?.conflicts ?? []) gaps.push(`Conflicting memory: ${c} — settle it before the call`);
+  if (b.memoryIssues?.stale) gaps.push(`${b.memoryIssues.stale} ${b.memoryIssues.stale === 1 ? 'memory needs' : 'memories need'} revalidation — confirm on the call`);
+  const overdue = (b.commitments ?? []).filter((c) => c.direction === 'WE_PROMISED' && c.dueAt && c.dueAt < b.now);
+  if (overdue.length) gaps.push(`We have ${overdue.length} overdue ${overdue.length === 1 ? 'promise' : 'promises'} — deliver or address it first`);
+  const unanswerable = (b.knowledge ?? []).filter((k) => k.decision === 'ESCALATE');
+  if (unanswerable.length) gaps.push(`${unanswerable.length} of their questions have no approved answer — prepare one`);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+  const commitments = (b.commitments ?? []).map((c) => `${c.direction === 'WE_PROMISED' ? 'We promised' : c.direction === 'PROSPECT_PROMISED' ? 'They promised' : 'Agreed'}: ${c.title}${c.dueAt ? ` — due ${fmt(c.dueAt)}${c.dueAt < b.now ? ' (overdue)' : ''}` : ''}`);
 
   return {
     content: {
@@ -196,7 +212,9 @@ export function buildBrief(b: BriefInput): { content: BriefContent; gaps: string
       suggestedQuestions: suggested.slice(0, 5),
       dontAskAgain,
       objective,
-      commitments: [],
+      commitments,
+      remembered: (b.memories ?? []).slice(0, 8),
+      relevantKnowledge: (b.knowledge ?? []).slice(0, 6),
     },
     gaps,
   };

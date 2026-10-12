@@ -408,14 +408,33 @@ function DraftCard({ r, canSend, busy, onUse, onSendAsIs, onDiscard, onFeedback 
       </button>
       {open && (
         <div className="mt-2 space-y-2 text-xs">
-          {r.answered.map((a) => (
-            <div key={a.question} className="rounded-lg border border-line bg-surface px-2.5 py-2">
-              <div className="font-medium">“{a.question}”</div>
-              <div className="text-muted">
-                {a.answer} <span className="text-faint">— from {a.source === "OFFER" ? "the campaign offer" : a.source === "THREAD" ? "the conversation" : "the company record"}</span>
+          {r.answered.map((a) => {
+            const k = a.source === "KNOWLEDGE" ? (r.knowledge ?? []).find((x) => x.revisionId === a.knowledgeRevisionId) : undefined;
+            return (
+              <div key={a.question} className="rounded-lg border border-line bg-surface px-2.5 py-2">
+                <div className="font-medium">“{a.question}”</div>
+                <div className="text-muted">
+                  {a.answer}{" "}
+                  <span className="text-faint">
+                    — from{" "}
+                    {k ? (
+                      <Link href={`/knowledge/${k.itemId}`} className="text-accent hover:underline">
+                        {k.title} v{k.version}
+                      </Link>
+                    ) : a.source === "KNOWLEDGE" ? (
+                      "approved knowledge"
+                    ) : a.source === "OFFER" ? (
+                      "the campaign offer"
+                    ) : a.source === "THREAD" ? (
+                      "the conversation"
+                    ) : (
+                      "the company record"
+                    )}
+                  </span>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <ul className="grid gap-1 sm:grid-cols-2">
             {r.validation.map((v) => (
               <li key={v.validator} className="flex items-start gap-1.5">

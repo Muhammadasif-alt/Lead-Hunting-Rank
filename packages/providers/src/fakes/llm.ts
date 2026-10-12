@@ -1,13 +1,16 @@
+import { testEmbedding } from '@revenue-os/shared';
 import { ProviderCallError } from '../core/errors.js';
-import type { CallOptions, CapabilityCheck, LlmRequest, LlmStructuredResult, LlmTextResult, LLMProvider, StructuredLlmRequest } from '../core/interfaces.js';
+import type { CallOptions, CapabilityCheck, EmbeddingProvider, EmbeddingRequest, EmbeddingResult, LlmRequest, LlmStructuredResult, LlmTextResult, LLMProvider, StructuredLlmRequest } from '../core/interfaces.js';
 import { FailureQueue, type FakeFailure } from './failures.js';
+
+export const TEST_EMBEDDING_MODEL = 'fake/test-embedding-256';
 
 /**
  * Deterministic stand-in for a language model. Tests script answers with `respondWith`; structured calls otherwise use
  * the caller's `simulated` answer (a rule-based stand-in), and text calls echo a short summary of the prompt. Structured output is validated against the caller's schema exactly as a real model's would
  * be — an answer that doesn't fit is an error, never passed on (docs/12 §62). Token counts are estimates (chars / 4).
  */
-export class FakeLLMProvider implements LLMProvider {
+export class FakeLLMProvider implements LLMProvider, EmbeddingProvider {
   readonly key = 'fake_llm';
   private readonly failures = new FailureQueue();
   private readonly scripted: unknown[] = [];
@@ -28,7 +31,14 @@ export class FakeLLMProvider implements LLMProvider {
     return [
       { capability: 'LLM_REASONING', ok: true, detail: 'Model reachable (test model)' },
       { capability: 'LLM_EXTRACTION', ok: true, detail: 'Model reachable (test model)' },
+      { capability: 'EMBEDDINGS', ok: true, detail: 'Test vectors (deterministic, 256 dimensions)' },
     ];
+  }
+
+  /** Deterministic test vectors (hashed word features) — exercises semantic retrieval without a vendor. */
+  async embed(request: EmbeddingRequest, { signal }: CallOptions): Promise<EmbeddingResult> {
+    await this.failures.before(signal);
+    return { vectors: request.texts.map((t) => testEmbedding(t)), model: TEST_EMBEDDING_MODEL, dimensions: 256, units: request.texts.length, costMinor: 0 };
   }
 
   async generateText(request: LlmRequest, { signal }: CallOptions): Promise<LlmTextResult> {

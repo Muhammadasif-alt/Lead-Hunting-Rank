@@ -19,6 +19,7 @@ export const providerRuntimeProvider: FactoryProvider<ProviderRuntime> = {
       redis: queues.redis,
       prefix: queues.prefix,
       llm: { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY },
+      embeddings: { provider: config.EMBEDDINGS_PROVIDER, apiKey: config.EMBEDDINGS_API_KEY, model: config.EMBEDDINGS_MODEL },
       credentials: { db: prisma.client, encryptionKey: config.ENCRYPTION_KEY, google: googleOAuthConfig(config) ?? undefined },
       logger: { warn: (obj, msg) => logger.warn(obj, msg) },
     }),

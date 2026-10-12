@@ -19,6 +19,11 @@ const configSchema = z
     REDIS_URL: z.string().startsWith('redis://', 'must be a redis:// URL'),
     LLM_PROVIDER: z.enum(['fake', 'anthropic', 'openai']).default('fake'),
     LLM_API_KEY: z.string().optional(),
+    /** Embeddings for semantic knowledge retrieval (Phase 15). `fake` = the Test AI model's deterministic vectors. */
+    EMBEDDINGS_PROVIDER: z.enum(['fake', 'voyage']).default('fake'),
+    EMBEDDINGS_API_KEY: z.string().optional(),
+    /** Voyage model; vectors of different models are never compared. */
+    EMBEDDINGS_MODEL: z.string().default('voyage-3.5-lite'),
     STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
     STORAGE_LOCAL_PATH: z.string().default('./storage'),
     /** 32-byte key, base64. Encrypts OAuth tokens / provider credentials at rest (Tech Spec #11). */
@@ -45,6 +50,9 @@ const configSchema = z
         path: ['LLM_API_KEY'],
         message: `required when LLM_PROVIDER=${cfg.LLM_PROVIDER}`,
       });
+    }
+    if (cfg.EMBEDDINGS_PROVIDER !== 'fake' && !cfg.EMBEDDINGS_API_KEY) {
+      ctx.addIssue({ code: 'custom', path: ['EMBEDDINGS_API_KEY'], message: `required when EMBEDDINGS_PROVIDER=${cfg.EMBEDDINGS_PROVIDER}` });
     }
   })
   .transform((cfg) => ({

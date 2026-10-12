@@ -12,6 +12,8 @@ export function configureApp(app: INestApplication): Logger {
   // The web app proxies /api/* from localhost; trust X-Forwarded-For only from loopback so per-IP rate limits
   // see the real client address and a remote client can't spoof it.
   (app as NestExpressApplication).set('trust proxy', 'loopback');
+  // Knowledge documents are uploaded as raw bytes (application/octet-stream, ≤ 10 MB); JSON keeps its small default limit.
+  (app as NestExpressApplication).useBodyParser('raw', { type: 'application/octet-stream', limit: '11mb' });
   app.use(requestContextMiddleware(logger));
   app.setGlobalPrefix('api');
   // Business endpoints live under /api/v1/… ; infrastructure endpoints (health) are version-neutral.

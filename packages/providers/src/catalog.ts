@@ -99,12 +99,12 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     key: 'fake_llm',
     name: 'Test AI model',
     category: 'AI',
-    capabilities: ['LLM_REASONING', 'LLM_EXTRACTION'],
+    capabilities: ['LLM_REASONING', 'LLM_EXTRACTION', 'EMBEDDINGS'],
     costModel: 'FREE',
     connection: 'NONE',
     fake: true,
     status: 'AVAILABLE',
-    description: 'Deterministic stand-in for a language model. Returns scripted or echo answers; output is still schema-validated.',
+    description: 'Deterministic stand-in for a language model. Returns scripted or echo answers; output is still schema-validated. Also makes deterministic test vectors for knowledge search.',
   },
   {
     key: 'fake_notifications',
@@ -153,6 +153,17 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     description: 'Claude for research, website and contact analysis, scoring and later drafting — behind the AI gateway. Uses the server key (LLM_PROVIDER=anthropic, LLM_API_KEY).',
   },
   {
+    key: 'voyage',
+    name: 'Voyage AI embeddings',
+    category: 'AI',
+    capabilities: ['EMBEDDINGS'],
+    costModel: 'PER_TOKEN',
+    connection: 'SERVER_KEY',
+    fake: false,
+    status: 'AVAILABLE',
+    description: 'Semantic search over approved knowledge (pgvector). Retrieval support only — structured, approved records still win. Uses the server key (EMBEDDINGS_PROVIDER=voyage, EMBEDDINGS_API_KEY).',
+  },
+  {
     key: 'gmail',
     name: 'Gmail',
     category: 'EMAIL',
@@ -183,8 +194,8 @@ export const PROVIDER_CATALOG: ProviderDefinition[] = [
     connection: 'API_KEY',
     fake: false,
     status: 'PLANNED',
-    plannedPhase: 15,
-    description: 'Private bucket for knowledge documents, snapshots and exports.',
+    plannedPhase: 22,
+    description: 'Private bucket for knowledge documents, snapshots and exports (production). Development uses local file storage.',
   },
 ];
 
@@ -196,6 +207,8 @@ export function providerDefinition(key: string): ProviderDefinition | undefined 
 export interface ServerKeys {
   llmProvider?: string;
   llmKeyConfigured?: boolean;
+  embeddingsProvider?: string;
+  embeddingsKeyConfigured?: boolean;
   /** Google OAuth client + encryption key configured — Gmail and Google Calendar can be connected. */
   googleOAuth?: boolean;
 }
@@ -204,6 +217,7 @@ export interface ServerKeys {
 export function isConnectable(def: ProviderDefinition, appEnv: string, keys: ServerKeys = {}): boolean {
   if (def.status !== 'AVAILABLE' || (def.fake && appEnv === 'production')) return false;
   if (def.connection === 'NONE') return true;
+  if (def.connection === 'SERVER_KEY' && def.capabilities.includes('EMBEDDINGS')) return keys.embeddingsProvider === def.key && keys.embeddingsKeyConfigured === true;
   if (def.connection === 'SERVER_KEY') return def.category === 'AI' && keys.llmProvider === def.key && keys.llmKeyConfigured === true;
   if (def.connection === 'OAUTH') return (def.key === 'gmail' || def.key === 'google_calendar') && keys.googleOAuth === true;
   return false;

@@ -57,6 +57,12 @@ export const JOBS = {
   conversationSweep: 'conversation.sweep',
   /** Periodic: booked meetings reconciled with the calendar (deleted / moved there), briefs prepared before they start. */
   meetingSweep: 'meeting.sweep',
+  /** An approved knowledge revision was published → embed its chunks (only chunks whose text changed). Payload: revisionId. */
+  knowledgeEmbed: 'knowledge.embed',
+  /** An uploaded document: parse → extract candidates → detect conflicts (nothing is approved here). Payload: sourceId. */
+  knowledgeDocumentProcess: 'knowledge.document.process',
+  /** Periodic: scheduled knowledge goes live, overdue reviews turn STALE, memories expire or need re-checking, promises fall due. */
+  brainSweep: 'brain.sweep',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];

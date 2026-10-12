@@ -83,8 +83,9 @@ export interface Reply {
   body: string;
   status: ReplyStatus;
   statusReason: string | null;
-  answered: { question: string; answer: string; source: string }[];
+  answered: { question: string; answer: string; source: string; knowledgeRevisionId?: string }[];
   unanswered: string[];
+  knowledge: { itemId: string; revisionId: string; code: string; version: number; title: string }[];
   validation: { validator: string; ok: boolean; detail: string }[];
   confidence: "HIGH" | "MEDIUM" | "LOW" | null;
   inReplyToMessageId: string | null;
@@ -239,4 +240,6 @@ export const VALIDATOR_LABEL: Record<string, string> = {
   approved_knowledge: "Approved knowledge only",
   escalation: "Asks a person when unsure",
   grounding: "Claims backed by evidence",
+  prohibited_claims: "No prohibited claims",
+  knowledge_source: "Cites approved knowledge",
 };

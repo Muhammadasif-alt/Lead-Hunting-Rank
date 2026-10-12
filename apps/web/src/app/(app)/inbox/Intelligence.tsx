@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowRight, Building2, CalendarClock, Compass, History, Lightbulb, Loader, Megaphone, Send, Target, X } from "lucide-react";
+import { ArrowRight, Brain, Building2, CalendarClock, Compass, Eye, History, Lightbulb, Loader, Megaphone, Send, Target, X } from "lucide-react";
 import { CATEGORY_INFO, EXTRACTION_INFO, INTENT_INFO, MODE_INFO, OBJECTION_INFO, STAGE_INFO, type ExtractionField, type ObjectionType, type PermissionKey } from "@revenue-os/shared";
-import { errorMessage, post } from "@/lib/api";
+import { api, errorMessage, post } from "@/lib/api";
+import { WHO, type AiContext } from "@/lib/memory";
 import { CATEGORY_STYLE, intentStyle, TIMELINE_LABEL, type ConversationDetail } from "@/lib/conversations";
 import { formatAgo } from "@/lib/crm";
 import { whenOf, zoneOf } from "@/lib/meetings";
@@ -86,6 +87,8 @@ export function Intelligence({ detail, onChange, onOffer }: { detail: Conversati
       <MeetingCard detail={detail} canBook={can("meeting.book")} onChange={onChange} onOffer={onOffer} />
 
       <OpportunityCard detail={detail} canCreate={can("opportunity.create")} />
+
+      <BrainCard conversationId={c.id} version={detail.messages.length + detail.replies.length} companyId={detail.company?.id ?? null} />
 
       {error && <div className="card border-danger/30 bg-danger-soft px-3 py-2 text-xs text-danger">{error}</div>}
 
@@ -401,6 +404,120 @@ function OpportunityCard({ detail, canCreate }: { detail: ConversationDetail; ca
         </>
       )}
       {error && <p className="mt-1 text-xs text-danger">{error}</p>}
+    </section>
+  );
+}
+
+/**
+ * Memory, promises and "View AI context" (screen #12 §60-63): what the AI remembers and has promised here, and exactly
+ * what it was given for the latest message — knowledge used, and what was deliberately left out.
+ */
+function BrainCard({ conversationId, version, companyId }: { conversationId: string; version: number; companyId: string | null }) {
+  const [ctx, setCtx] = useState<AiContext | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    let live = true;
+    api<AiContext>(`/memory/context/conversations/${conversationId}`)
+      .then((r) => live && (setCtx(r), setError(null)))
+      .catch((err) => live && setError(errorMessage(err)));
+    return () => {
+      live = false;
+    };
+  }, [conversationId, version]);
+  if (error) return null;
+  if (!ctx)
+    return (
+      <section className="card flex items-center gap-2 p-4 text-xs text-muted">
+        <Loader className="size-3.5 animate-spin" /> Loading memory…
+      </section>
+    );
+  const k = ctx.knowledge;
+  return (
+    <section className="card space-y-3 p-4" data-tone="ai">
+      <div className="eyebrow flex items-center justify-between gap-2 text-[11px]">
+        <span className="flex items-center gap-1.5">
+          <Brain className="size-3.5 text-tone" /> Memory & promises
+        </span>
+        {companyId && (
+          <Link href={`/companies/${companyId}?tab=memory`} className="normal-case tracking-normal text-accent hover:underline">
+            All →
+          </Link>
+        )}
+      </div>
+      {ctx.commitments.length > 0 ? (
+        <ul className="space-y-1 text-xs">
+          {ctx.commitments.map((p) => (
+            <li key={p.id} className={p.overdue ? "text-danger" : ""}>
+              <span className="font-medium">{WHO[p.direction] ?? p.direction}:</span> {p.title}
+              {p.dueAt ? <span className="text-faint"> · {p.overdue ? "overdue" : `due ${new Date(p.dueAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}</span> : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted">No open promises.</p>
+      )}
+      {ctx.memoryConflicts.length > 0 && (
+        <p className="rounded-lg border border-danger/30 bg-danger-soft px-2.5 py-1.5 text-xs text-danger">
+          Conflicting: {ctx.memoryConflicts.map((m) => `${m.label} (${m.values.join(" vs ")})`).join(" · ")} — the AI uses neither.
+        </p>
+      )}
+      {ctx.memories.length > 0 && (
+        <ul className="space-y-1 text-xs">
+          {ctx.memories.slice(0, 6).map((m) => (
+            <li key={m.id}>
+              <span className="text-muted">{m.label}:</span> {m.value}
+              {m.origin === "AI_INFERENCE" && <span className="text-amber"> (AI guess)</span>}
+            </li>
+          ))}
+        </ul>
+      )}
+      <button type="button" onClick={() => setOpen(!open)} className="inline-flex items-center gap-1 text-xs text-accent hover:underline" aria-expanded={open}>
+        <Eye className="size-3.5" /> {open ? "Hide AI context" : "View AI context"}
+      </button>
+      {open && (
+        <div className="space-y-2.5 border-t border-line pt-2.5 text-xs">
+          <p className="text-muted">
+            {k.approvedItems} approved knowledge item{k.approvedItems === 1 ? "" : "s"} available
+            {k.semantic ? " · meaning search on" : " · keyword search"}
+            {!k.controls.pricingAnswers ? " · pricing answers off" : ""}
+            {!k.controls.technicalClaims ? " · technical claims off" : ""}
+          </p>
+          {k.answers.length > 0 && (
+            <div>
+              <div className="font-medium">Their questions</div>
+              <ul className="mt-1 space-y-1.5">
+                {k.answers.map((a) => (
+                  <li key={a.question}>
+                    “{a.question}”{" "}
+                    <span className={a.decision === "ANSWER" ? "text-brand" : "text-amber"}>
+                      → {a.decision === "ANSWER" ? "answer from knowledge" : `a person (${a.reason})`}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {k.used.length > 0 && (
+            <div>
+              <div className="font-medium">Knowledge given to the AI</div>
+              <p className="text-muted">{k.used.map((u) => `${u.title} v${u.version}`).join(" · ")}</p>
+            </div>
+          )}
+          {ctx.notIncluded.length > 0 && (
+            <div>
+              <div className="font-medium">Deliberately left out</div>
+              <ul className="mt-1 space-y-0.5 text-muted">
+                {ctx.notIncluded.map((n) => (
+                  <li key={n.label}>
+                    {n.label} — <span className="text-faint">{n.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

@@ -2,10 +2,16 @@ import { agentDefinition } from '@revenue-os/ai';
 import { Prisma, provisionMeetingTypes, type ExternalAction, type Meeting, type MeetingOutcomeType, type MeetingStatus, type MeetingType, type PrismaClient, type SchedulingProfile } from '@revenue-os/database';
 import { writeAudit, type ServiceContext, type Tx } from '@revenue-os/domain';
 import { recordEvent, type Revalidator } from '@revenue-os/events';
+import { approvedKnowledge, commitmentsFromMessageTx, proposeMemoriesTx } from '@revenue-os/knowledge';
 import { requestExternalAction } from '@revenue-os/policy';
 import { CALENDAR_ACTIONS } from '@revenue-os/providers';
 import {
+  answerQuestion,
   BusinessRuleError,
+  knowledgeControlsOf,
+  memoryKeyInfo,
+  readMessage,
+  memoryFromReading,
   ConflictError,
   describeError,
   findSlots,
@@ -1016,6 +1022,17 @@ export async function recordOutcome(db: PrismaClient, ctx: ServiceContext, meeti
       if (m.conversationId) await escalateConversationTx(tx, ctx, m.conversationId, `No-show — offer to reschedule${noShowRisk(count2) ? ` (${noShowRisk(count2)})` : ''}`, 'ENGAGED');
     } else {
       await recordEvent(tx, ctx, 'MeetingCompleted', m.id, { meetingId: m.id, outcome: input.outcome, recommendedStage: rec.stage });
+      // Phase 15: what the notes say becomes memory candidates (meeting notes, a colleague's words — not the prospect's),
+      // and promises in the notes / next step become commitments (docs/13 §23-27; screen #12 §52 "after meeting").
+      const notes = [input.summary, input.notes].filter(Boolean).join('\n').trim();
+      const ids = { companyId: m.companyId, personId: m.primaryPersonId, conversationId: m.conversationId, opportunityId: m.opportunityId };
+      if (notes) {
+        const r = readMessage({ text: notes }, now);
+        const proposals = memoryFromReading({ text: notes, primaryIntent: r.primaryIntent === 'UNKNOWN' ? 'POSITIVE' : r.primaryIntent, extracted: r.extracted, objections: r.objections, questions: [] }, { hasOpportunity: !!m.opportunityId, hasPerson: !!m.primaryPersonId });
+        await proposeMemoriesTx(tx, ctx, { ids, proposals, origin: 'MEETING_NOTE', confidence: 'MEDIUM', sourceType: 'MEETING', sourceId: m.id, meetingId: m.id, observedAt: m.startAt ?? now, now });
+      }
+      const promises = [notes, input.nextStep?.trim() ? `We will ${input.nextStep.trim().replace(/^we (will|'ll)\s+/i, '')}.` : ''].filter(Boolean).join('\n');
+      if (promises) await commitmentsFromMessageTx(tx, ctx, { text: promises, side: 'OURS', ids, sourceType: 'MEETING', sourceId: m.id, ownerUserId: m.ownerUserId, now });
     }
     return count2;
   }, TX);
@@ -1060,6 +1077,22 @@ export async function generateBriefTx(tx: Tx, workspaceId: string, meetingId: st
   const hypotheses = await tx.opportunityHypothesis.findMany({ where: { workspaceId, companyId: m.companyId, status: 'ACTIVE' }, orderBy: { confidence: 'desc' }, take: 4, select: { hypothesis: true, confidence: true } });
   const previous = await tx.meeting.findMany({ where: { workspaceId, companyId: m.companyId, id: { not: m.id }, status: { in: ['COMPLETED', 'NO_SHOW', 'CANCELLED', 'BOOKED'] } }, orderBy: { createdAt: 'desc' }, take: 5, include: { outcome: true } });
   const research = await tx.researchRun.findFirst({ where: { workspaceId, companyId: m.companyId, status: { in: ['COMPLETED', 'PARTIAL'] } }, orderBy: { completedAt: 'desc' }, select: { completedAt: true } });
+  // Phase 15: open promises, memory scoped to this company / person / conversation / deal, and approved answers.
+  const scopes = [
+    { entityType: 'COMPANY' as const, entityId: m.companyId },
+    ...(m.primaryPersonId ? [{ entityType: 'PERSON' as const, entityId: m.primaryPersonId }] : []),
+    ...(conv ? [{ entityType: 'CONVERSATION' as const, entityId: conv.id }] : []),
+    ...(opp ? [{ entityType: 'OPPORTUNITY' as const, entityId: opp.id }] : []),
+  ];
+  const [commitments, memories, memoryConflicts] = await Promise.all([
+    tx.commitment.findMany({ where: { workspaceId, companyId: m.companyId, status: { in: ['OPEN', 'WAITING', 'DUE'] } }, orderBy: [{ dueAt: { sort: 'asc', nulls: 'last' } }], take: 8 }),
+    tx.memory.findMany({ where: { workspaceId, companyId: m.companyId, status: { in: ['ACTIVE', 'STALE'] }, OR: scopes, key: { notIn: ['QUESTION', 'OBJECTION'] } }, orderBy: { observedAt: 'desc' }, take: 20 }),
+    tx.memoryConflict.findMany({ where: { workspaceId, companyId: m.companyId, status: 'OPEN' }, take: 5 }),
+  ]);
+  const questionsAsked = [...new Set(readings.flatMap((r) => r.questions))];
+  const approved = questionsAsked.length ? await approvedKnowledge(tx, workspaceId, now) : [];
+  const ws = await tx.workspace.findUniqueOrThrow({ where: { id: workspaceId }, select: { knowledgeControls: true } });
+  const brainAnswers = questionsAsked.slice(0, 6).map((q) => answerQuestion(q, approved.map((k) => ({ k, semantic: null })), knowledgeControlsOf(ws.knowledgeControls)));
   const titles = new Map<string, string | null>();
   for (const a of m.attendees.filter((x) => x.personId)) {
     const job = await tx.employment.findFirst({ where: { workspaceId, personId: a.personId!, companyId: m.companyId, isCurrent: true }, select: { title: true } });
@@ -1071,7 +1104,7 @@ export async function generateBriefTx(tx: Tx, workspaceId: string, meetingId: st
     people: m.attendees.map((a) => ({ name: a.name, title: a.personId ? (titles.get(a.personId) ?? null) : null, side: a.side === 'INTERNAL' ? ('INTERNAL' as const) : ('EXTERNAL' as const), role: a.role })),
     deal: opp ? { name: opp.name, stage: opp.stage.semantic as StageSemantic, service: opp.service, originReason: opp.originReason, originQuote: opp.originQuote } : null,
     known: knowledge.answers,
-    questionsAsked: [...new Set(readings.flatMap((r) => r.questions))],
+    questionsAsked,
     objections: readings.flatMap((r) => r.objections as { type: string; text: string }[]),
     stakeholders: stakeholders.filter((s) => !m.attendees.some((a) => a.personId && a.personId === s.personId)).map((s) => ({ name: s.name, role: s.role, status: s.status })),
     hypotheses: hypotheses.map((h) => ({ label: h.hypothesis, confidence: h.confidence })),
@@ -1079,6 +1112,10 @@ export async function generateBriefTx(tx: Tx, workspaceId: string, meetingId: st
     conversationSummary: conv?.summary ?? null,
     lastResearchAt: research?.completedAt ?? null,
     now,
+    commitments: commitments.map((c) => ({ direction: c.direction, title: c.title, dueAt: c.dueAt })),
+    memories: memories.filter((x) => x.status === 'ACTIVE').map((x) => ({ label: memoryKeyInfo(x.key).label, value: x.value, origin: x.origin })),
+    memoryIssues: { conflicts: [...new Set(memoryConflicts.map((c) => memoryKeyInfo(c.key).label))], stale: memories.filter((x) => x.status === 'STALE').length },
+    knowledge: brainAnswers.map((a) => ({ question: a.question, decision: a.decision, answer: a.answer, source: a.used.map((u) => `${u.code} v${u.version}`).join(', ') || null, reason: a.reason })),
   };
   const { content, gaps } = buildBrief(input);
   const last = await tx.meetingBrief.findFirst({ where: { meetingId: m.id }, orderBy: { version: 'desc' }, select: { version: true } });

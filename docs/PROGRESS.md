@@ -22,7 +22,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 12 | Conversations + AI Inbox | ✅ done 2026-10-09 |
 | 13 | Qualification + Opportunities | ✅ done 2026-10-09 |
 | 14 | Calendar + Meetings | ✅ done 2026-10-09 |
-| 15 … 24 | Memory + Knowledge → … → Production + autonomy rollout | ⬜ |
+| 15 | Memory + Knowledge | ✅ done 2026-10-12 |
+| 16 … 24 | Signals + Intent → … → Production + autonomy rollout | ⬜ |
 
 Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy Engine, §67-76 Phase 11 Campaigns, … §147-155 Phase 24). The short list in docs/17 §1 has no separate policy phase, so its later numbers are one lower.
 
@@ -221,6 +222,22 @@ Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy E
 - Deferred by plan: prospect reminder emails and internal notifications (Phase 21 attention / notifications), AI extraction from meeting notes and transcripts, commitments (Phase 15 memory), temporary slot holds, multi-person availability (several internal attendees), Outlook calendar, calendar AI assistant and meeting analytics (Phase 17)
 - After pulling: pnpm install, pnpm db:deploy, rebuild (pnpm build). Then connect "Test calendar" (or Google Calendar) in Integrations and set your availability in Meetings → Setup. No new .env values (Google Calendar uses the Gmail OAuth client; enable the Calendar API in Google Cloud)
 - Note: the full pnpm test was not re-run; the suites above pass on their own
+
+## Phase 15 — Definition of Done
+DoD: "AI can answer business-specific questions from approved truth and safely identify missing/conflicting knowledge."
+- [x] Schema: KnowledgeItem + versioned KnowledgeRevision (DRAFT → IN_REVIEW → APPROVED → SUPERSEDED, effective dates, ROLLBACK restores), KnowledgeChunk (pgvector), KnowledgeSource (documents), KnowledgeConflict, KnowledgeGap, KnowledgeUsage, KnowledgeFeedback, Workspace.knowledgeControls (kill rules); Memory + MemoryEvidence + MemoryCandidate + MemoryConflict, Commitment (ours / theirs / mutual), Relationship; ConversationReply.knowledge (which versions a draft used). DB checks + one open draft per item
+- [x] Structured knowledge (`@revenue-os/shared/knowledge`): profile, services, pricing, FAQs, policies, integrations, case studies, competitors, claims, documents, proposal blocks — one field spec drives the form and the server check. Commercial types (pricing, policies, claims) need knowledge.approve_commercial (owner). Only a person approves
+- [x] Answer Engine (deterministic): structured records first (pricing, integrations, policies), then FAQs / services by keyword + meaning (embeddings, vectors reused by content hash); authority beats similarity; prices only computed from approved rules when "AI may quote" is on; discounts, custom prices, legal, commitments, conflicts and stale high-risk items → a person; nothing approved → a gap
+- [x] Documents (PDF / DOCX / text) → parsed in the worker → candidates for review, never truth; a clash with approved knowledge makes a review item
+- [x] Memory: candidates from replies and meeting outcomes → auto-accepted or waiting for a person (budget, authority, unsure) → memories with the quote; newer statements supersede, true clashes go to review; correct / invalidate / still true; human notes; AI guesses kept apart and never quoted as fact. Commitments both ways (unanswered questions become "we owe an answer" due in 1 business day, auto-completed when answered); relationships from referrals. 5-minute brain sweep (stale, due commitments, scheduled versions)
+- [x] AI: Context Builder V2 (memory + commitments + approved knowledge + what was left out and why), reply prompt v2 with a KNOWLEDGE source; validators: pricing authority, no promises, prohibited claims, knowledge source. Improvement loop: a person's reply to an open gap → HUMAN_ANSWER FAQ draft
+- [x] API: /knowledge (overview, items CRUD + submit / approve / reject / restore / reviewed / disable / archive / feedback, review queue, gaps answer / dismiss, conflicts, documents upload, simulate, search, controls) and /memory (overview, search, memory detail + correct / invalidate / verify, notes, candidates, conflicts, commitments, relationships, company memory, AI context for a conversation)
+- [x] Screens: Knowledge Base (health, kill rules, library per type, profile, documents, gaps, review queue, "Ask as prospect" simulator), knowledge item (approved vs draft, approve / reject, versions + restore, conflicts, usage, feedback, audit), AI Memory (overview, review, commitments, conflicts, relationships, search, memory drawer with evidence + history), Company 360 Memory tab (facts / notes / AI guesses apart, add note, add commitment), Inbox "Memory & promises" card with "View AI context", knowledge sources on drafts, meeting brief with promises, remembered facts and approved answers. Work at 390px
+- [x] Tests: shared knowledge + memory rules, providers (Voyage embeddings), knowledge package, API integration (phase15 — 4); Phase 3 / 5 / 9–14 suites still pass
+- [x] Live run (dev): profile, service, FAQ and pricing approved → "How long until results?" answered from the FAQ, "How much per month?" → $499 from pricing, "20% discount?" → a person, an unknown question → gap; note + commitment on a company; AI context for a conversation
+- Deferred by plan: S3 file storage (Phase 22), AI-drafted knowledge from documents with an LLM, proposal generator, knowledge analytics (Phase 17), memory extraction from transcripts
+- After pulling: pnpm install, pnpm db:deploy, **pnpm db:seed** (new permissions knowledge.manage / approve_commercial, memory.read / manage), rebuild (pnpm build). New .env placeholders: EMBEDDINGS_PROVIDER, EMBEDDINGS_API_KEY, EMBEDDINGS_MODEL (empty = keyword search only, still safe)
+- Note: the full pnpm test was not re-run; the suites above pass on their own. Detail pages ([id] routes) could not be screenshot live because the long-running web dev server's worker had crashed (an untouched Phase 11 page fails the same way) — restart `pnpm dev:web` to view them
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

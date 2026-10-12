@@ -2,8 +2,20 @@ import { buildCompanyContext, conversationAgent, checkReply, inboxAgent, runAgen
 import type { Conversation, ConversationReply, ExternalAction, Prisma, PrismaClient, ReplyStatus } from '@revenue-os/database';
 import type { ServiceContext, Tx } from '@revenue-os/domain';
 import { recordEvent, type Revalidator } from '@revenue-os/events';
+import {
+  buildBrainContext,
+  commitmentsFromMessageTx,
+  completeAnswerPromisesTx,
+  createCommitmentTx,
+  createKnowledge,
+  proposeMemoriesTx,
+  recordGapsTx,
+  recordUsageTx,
+  relationshipFromReferralTx,
+  type BrainContext,
+} from '@revenue-os/knowledge';
 import { addSuppression, requestExternalAction } from '@revenue-os/policy';
-import { INTENT_INFO, NON_HUMAN_INTENTS, readMessage, type Intent, type MessageReading } from '@revenue-os/shared';
+import { businessDaysAhead, INTENT_INFO, memoryFromReading, NON_HUMAN_INTENTS, readMessage, type Intent, type KnowledgeRef, type MessageReading } from '@revenue-os/shared';
 import { categorize, nextStage, priorityOf, REPLY_INTENTS, waitingAfter } from './conversation-rules.js';
 import type { OutreachDeps } from './engine.js';
 import { scheduleFromMessage } from './meetings.js';
@@ -102,7 +114,7 @@ export async function processConversationMessage(deps: OutreachDeps, job: { work
     }
   }
 
-  const applied = await db.$transaction((tx) => applyReading(tx, conv, msg.id, reading, method, agentTaskId, now), TX);
+  const applied = await db.$transaction((tx) => applyReading(tx, conv, msg.id, reading, method, agentTaskId, now, msg.text), TX);
   if (!applied) return 'ALREADY_PROCESSED';
 
   // Phase 14: they picked an offered time → the Scheduling Agent asks to book it (the calendar invite is the answer, so
@@ -137,13 +149,17 @@ export function mergeWithRules(ai: InboxReading, rules: MessageReading): Message
 
 const HUMAN_RISKS = new Set(['LEGAL', 'REFUND', 'DISCOUNT', 'CUSTOM_PRICING', 'HUMAN_REQUESTED', 'ANGRY', 'COMMITMENT']);
 
-/** AUTO mode still never sends something sensitive, uncertain or incomplete on its own. */
+/**
+ * AUTO mode still never sends something sensitive, uncertain or incomplete on its own. A pricing question fully
+ * answered from approved, quotable pricing (the reply carries its knowledge revisions) is no longer "needs a person".
+ */
 function canAutoSend(reading: MessageReading, reply: ConversationReply): boolean {
-  return !reading.needsHuman && !reading.riskFlags.some((f) => HUMAN_RISKS.has(f)) && reply.unanswered.length === 0 && reply.confidence !== 'LOW';
+  const pricingResolved = reading.primaryIntent === 'PRICING' && (reply.knowledge as unknown[]).length > 0 && reply.unanswered.length === 0;
+  return (!reading.needsHuman || pricingResolved) && !reading.riskFlags.some((f) => HUMAN_RISKS.has(f)) && reply.unanswered.length === 0 && reply.confidence !== 'LOW';
 }
 
 /** Stores the reading, applies stated facts, moves the stage and recomputes category and priority — one transaction. */
-async function applyReading(tx: Tx, conv: Conversation, messageId: string, r: MessageReading, method: string, agentTaskId: string | null, now: Date): Promise<boolean> {
+async function applyReading(tx: Tx, conv: Conversation, messageId: string, r: MessageReading, method: string, agentTaskId: string | null, now: Date, text: string): Promise<boolean> {
   const ctx = system(conv.workspaceId);
   const { count } = await tx.messageClassification.createMany({
     data: [
@@ -223,6 +239,15 @@ async function applyReading(tx: Tx, conv: Conversation, messageId: string, r: Me
   if (human && intent !== 'UNSUBSCRIBE') {
     const updated = await tx.conversation.findUniqueOrThrow({ where: { id: conv.id } });
     await opportunityFromConversationTx(tx, updated, r.extracted.map((f) => ({ ...f, messageId, confidence: r.confidence })), intent, now);
+    // Phase 15 (docs/13 §4-6, §23-29): what they said becomes memory candidates on the right record (this deal, this
+    // person, this company), their promises become commitments, a referral becomes a suggested relationship — in the
+    // same transaction as the reading. Unsubscribes are suppression, never memory.
+    const after = await tx.conversation.findUniqueOrThrow({ where: { id: conv.id }, select: { opportunityId: true, personId: true, assignedToId: true } });
+    const ids = { companyId: conv.companyId, personId: after.personId, conversationId: conv.id, opportunityId: after.opportunityId };
+    const proposals = memoryFromReading({ text, primaryIntent: intent, extracted: r.extracted, objections: r.objections, questions: r.questions }, { hasOpportunity: !!after.opportunityId, hasPerson: !!after.personId });
+    await proposeMemoriesTx(tx, ctx, { ids, proposals, origin: 'DIRECT_STATEMENT', confidence: r.confidence, sourceType: 'MESSAGE', sourceId: messageId, observedAt: now, now });
+    await commitmentsFromMessageTx(tx, ctx, { text, side: 'THEIRS', ids, sourceType: 'MESSAGE', sourceId: messageId, ownerUserId: after.assignedToId, now });
+    for (const f of r.extracted.filter((x) => x.field === 'REFERRAL')) await relationshipFromReferralTx(tx, ctx, { companyId: conv.companyId, fromPersonId: after.personId, referral: f.value, quote: f.quote, context: conv.subject, sourceId: messageId });
   }
 
   await recordEvent(tx, ctx, 'ConversationMessageClassified', conv.id, { conversationId: conv.id, messageId, primaryIntent: intent, method, needsHuman: r.needsHuman });
@@ -248,10 +273,14 @@ export async function draftConversationReply(deps: OutreachDeps, conversationId:
   const c = msg.classification;
   const reading = opts.reading ?? (c ? { primaryIntent: c.primaryIntent as Intent, secondaryIntents: c.secondaryIntents as Intent[], questions: c.questions, objections: c.objections as MessageReading['objections'], riskFlags: c.riskFlags as MessageReading['riskFlags'] } : readMessage({ text: msg.text, subject: msg.subject }, now));
 
+  // Context Builder V2 (docs/17 §99-105): approved knowledge for the questions asked, memory scoped to this deal /
+  // person / company, open promises. If it can't be built the agent still drafts — and answers nothing business-specific.
+  const brain = await buildBrainContext({ db, providers: deps.providers, now: deps.now }, { workspaceId: conv.workspaceId, companyId: conv.companyId, personId: conv.personId, conversationId: conv.id, opportunityId: conv.opportunityId, questions: reading.questions, now }).catch(() => null);
   const ctx: ReplyContext = {
     ...(await threadContext(db, conv, msg.id, now)),
     reading: { primaryIntent: reading.primaryIntent, secondaryIntents: reading.secondaryIntents, questions: reading.questions, objections: reading.objections, riskFlags: reading.riskFlags },
     recipient: { firstName: await firstNameOf(db, conv) },
+    ...(brain ? { brain: replyBrain(brain) } : {}),
   };
   const key = opts.requestId ? `reply:${msg.id}:${opts.requestId}` : `reply:${msg.id}`;
   const result = await runAgentTask({ db, providers: deps.providers, now: deps.now }, conversationAgent, ctx, key);
@@ -264,8 +293,14 @@ export async function draftConversationReply(deps: OutreachDeps, conversationId:
       const existing = await tx.conversationReply.findFirst({ where: { conversationId, agentTaskId: task.id } });
       if (existing) return existing;
     }
+    // Questions approved knowledge has no answer for — and the reply could not answer otherwise — become knowledge gaps
+    // (once per message, not per regenerated draft).
+    const done = task?.status === 'COMPLETED' ? (task.output as ReplyDraft) : null;
+    const gaps = (brain?.knowledge.answers ?? []).filter((a) => a.decision === 'ESCALATE' && a.gap && (!done || done.unanswered.some((u) => u.trim() === a.question.trim() || u.includes(a.question) || a.question.includes(u))));
+    if (gaps.length && !opts.requestId) await recordGapsTx(tx, sctx, { questions: gaps.map((a) => ({ question: a.question, topic: a.topic })), conversationId: conv.id, companyId: conv.companyId, now });
     if (task?.status === 'COMPLETED') {
       const out = task.output as ReplyDraft;
+      const refs = knowledgeRefsOf(out, brain);
       await tx.conversationReply.updateMany({ where: { conversationId, status: 'DRAFT', author: 'AI' }, data: { status: 'SUPERSEDED', statusReason: 'A newer draft was made' } });
       const reply = await tx.conversationReply.create({
         data: {
@@ -279,13 +314,18 @@ export async function draftConversationReply(deps: OutreachDeps, conversationId:
           answered: out.answered as Prisma.InputJsonValue,
           unanswered: out.unanswered,
           claims: out.claims as Prisma.InputJsonValue,
+          knowledge: refs as unknown as Prisma.InputJsonValue,
           validation: checkReply(out, ctx) as unknown as Prisma.InputJsonValue,
           confidence: out.confidence,
           status: 'DRAFT',
           statusReason: out.needsHuman ? out.reason || 'Needs a person' : null,
         },
       });
+      // "Message 123 used Pricing v7" (docs/13 §83-94).
+      await recordUsageTx(tx, conv.workspaceId, { usedByType: 'REPLY', usedById: reply.id, conversationId: conv.id, uses: out.answered.filter((a) => a.source === 'KNOWLEDGE' && a.knowledgeRevisionId).flatMap((a) => refs.filter((r) => r.revisionId === a.knowledgeRevisionId).map((r) => ({ itemId: r.itemId, revisionId: r.revisionId, version: r.version, question: a.question }))) });
       if (out.needsHuman || out.unanswered.length) await escalateTx(tx, sctx, conv.id, out.unanswered.length ? `The AI could not answer: ${out.unanswered.join(' / ').slice(0, 200)}` : out.reason || 'The reply needs a person');
+      // Pricing that approved pricing fully answered no longer needs a person (risk words still do).
+      else if (reading.primaryIntent === 'PRICING' && !reading.riskFlags.length && refs.length) await clearPricingEscalationTx(tx, conv.id, now);
       await recordEvent(tx, sctx, 'ConversationReplyDrafted', conv.id, { conversationId: conv.id, replyId: reply.id, author: 'AI', status: 'DRAFT' });
       return reply;
     }
@@ -300,6 +340,32 @@ export async function draftConversationReply(deps: OutreachDeps, conversationId:
     await escalateTx(tx, sctx, conv.id, `${reason.slice(0, 200)} — reply yourself`);
     return reply;
   }, TX);
+}
+
+/** The Business Brain part of the agent's context (types from @revenue-os/knowledge → the agent's own shape). */
+function replyBrain(b: BrainContext): NonNullable<ReplyContext['brain']> {
+  return {
+    answers: b.knowledge.answers,
+    memories: b.memories.map((m) => ({ label: m.label, value: m.value, origin: m.origin, outreach: m.outreach })),
+    commitments: b.commitments.map((c) => ({ direction: c.direction, title: c.title, dueAt: c.dueAt, overdue: c.overdue })),
+    rules: b.knowledge.rules,
+    profile: b.knowledge.profile,
+  };
+}
+
+/** The approved revisions a draft's KNOWLEDGE answers rest on — only ones the Answer Engine actually used. */
+function knowledgeRefsOf(out: ReplyDraft, brain: BrainContext | null): KnowledgeRef[] {
+  const cited = new Set(out.answered.filter((a) => a.source === 'KNOWLEDGE' && a.knowledgeRevisionId).map((a) => a.knowledgeRevisionId!));
+  const all = new Map((brain?.knowledge.answers ?? []).flatMap((a) => a.used).map((u) => [u.revisionId, u]));
+  return [...cited].flatMap((id) => (all.has(id) ? [all.get(id)!] : []));
+}
+
+async function clearPricingEscalationTx(tx: Tx, conversationId: string, now: Date) {
+  const c = await tx.conversation.findUniqueOrThrow({ where: { id: conversationId } });
+  if (!c.needsHuman || !/pricing/i.test(c.escalationReason ?? '')) return;
+  const state = { stage: c.stage, mode: c.mode, waitingOn: c.waitingOn, needsHuman: false, primaryIntent: c.primaryIntent, snoozedUntil: c.snoozedUntil, resolvedAt: c.resolvedAt };
+  const { priority, reasons } = priorityOf({ primaryIntent: c.primaryIntent, needsHuman: false, riskFlags: [], waitingOn: c.waitingOn, stage: c.stage });
+  await tx.conversation.update({ where: { id: c.id }, data: { ...state, category: categorize(state, now), escalationReason: null, priority, priorityReasons: reasons, version: { increment: 1 } } });
 }
 
 async function escalateTx(tx: Tx, ctx: ServiceContext, conversationId: string, reason: string) {
@@ -442,9 +508,45 @@ export async function settleConversationReply(db: PrismaClient, externalActionId
       data: { ...state, category: categorize(state, now), escalationReason: null, priority, priorityReasons: reasons, lastOutboundAt: sentAt, lastMessageAt: sentAt > c.lastMessageAt ? sentAt : c.lastMessageAt, threadRef: c.threadRef ?? meta.threadId ?? null, version: { increment: 1 } },
     });
     if (c.opportunityId) await tx.opportunity.updateMany({ where: { id: c.opportunityId, status: 'OPEN' }, data: { lastActivityAt: sentAt } });
+    // Phase 15 (docs/13 §23-27 "AI can't forget its promises"): a reply that answers keeps our earlier "we'll come back
+    // to you" promises; the AI's "a colleague will come back on that" becomes a promise with a due date; a person's
+    // own promises ("I'll send the case study tomorrow") are read from their words.
+    const ids = { companyId: c.companyId, personId: c.personId, conversationId: c.id, opportunityId: c.opportunityId };
+    const answered = ((reply.answered ?? []) as { question: string }[]).map((a) => a.question);
+    await completeAnswerPromisesTx(tx, ctx, { conversationId: c.id, answeredQuestions: answered, byPerson: reply.author === 'HUMAN', evidence: `Reply sent ${sentAt.toISOString().slice(0, 16).replace('T', ' ')}`, now: sentAt });
+    if (reply.author === 'AI') {
+      for (const [i, q] of reply.unanswered.entries()) {
+        await createCommitmentTx(tx, ctx, { ...ids, direction: 'WE_PROMISED', title: `Come back with an answer: "${q.slice(0, 150)}"`, detail: q, dueAt: businessDaysAhead(sentAt, 1), ownerUserId: c.assignedToId, origin: 'AI_REPLY', sourceType: 'REPLY', sourceId: reply.id, quote: 'I’ll check with a colleague and come back to you with a proper answer.', dedupeKey: `reply:${reply.id}:${i}` });
+      }
+    } else {
+      await commitmentsFromMessageTx(tx, ctx, { text: reply.body, side: 'OURS', ids, sourceType: 'REPLY', sourceId: reply.id, ownerUserId: reply.authorUserId, now: sentAt });
+    }
     await recordEvent(tx, ctx, 'ConversationReplySent', c.id, { conversationId: c.id, replyId: reply.id, externalActionId, author: reply.author });
     return 'SENT';
-  }, TX);
+  }, TX).then(async (outcome) => {
+    if (outcome === 'SENT' && reply.author === 'HUMAN') await knowledgeFromHumanReply(db, reply).catch(() => 0);
+    return outcome;
+  });
+}
+
+/**
+ * The Knowledge Improvement Loop (screen #13 §49-50): a person answered a question the AI could not → a draft FAQ
+ * "generated from a human-approved response", linked to the gap, waiting for review. Never live until approved.
+ */
+export async function knowledgeFromHumanReply(db: PrismaClient, reply: ConversationReply): Promise<number> {
+  const gaps = await db.knowledgeGap.findMany({ where: { workspaceId: reply.workspaceId, status: 'OPEN', draftItemId: null, conversationIds: { has: reply.conversationId } }, orderBy: { lastSeenAt: 'desc' }, take: 2 });
+  const actor: ServiceContext = { workspaceId: reply.workspaceId, actor: reply.authorUserId ? { type: 'HUMAN', id: reply.authorUserId } : { type: 'SYSTEM', id: null } };
+  for (const g of gaps) {
+    const { item } = await createKnowledge(db, actor, {
+      type: 'FAQ',
+      content: { question: g.question, answer: reply.body.trim().slice(0, 4000), category: 'GENERAL', alsoAskedAs: [] },
+      origin: 'HUMAN_ANSWER',
+      gapId: g.id,
+      changeNote: 'Drafted from a person’s reply in a conversation — edit it into a general answer, then approve',
+    });
+    await db.knowledgeGap.updateMany({ where: { id: g.id, status: 'OPEN' }, data: { status: 'DRAFTED', draftItemId: item.id } });
+  }
+  return gaps.length;
 }
 
 // ───────────────────────────── execution guard ─────────────────────────────

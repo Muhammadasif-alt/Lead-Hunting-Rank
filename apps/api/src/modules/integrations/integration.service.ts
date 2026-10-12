@@ -109,7 +109,13 @@ export class IntegrationService {
   }
 
   private serverKeys() {
-    return { llmProvider: this.config.LLM_PROVIDER, llmKeyConfigured: !!this.config.LLM_API_KEY, googleOAuth: !!googleOAuthConfig(this.config) };
+    return {
+      llmProvider: this.config.LLM_PROVIDER,
+      llmKeyConfigured: !!this.config.LLM_API_KEY,
+      embeddingsProvider: this.config.EMBEDDINGS_PROVIDER,
+      embeddingsKeyConfigured: !!this.config.EMBEDDINGS_API_KEY,
+      googleOAuth: !!googleOAuthConfig(this.config),
+    };
   }
 
   /**

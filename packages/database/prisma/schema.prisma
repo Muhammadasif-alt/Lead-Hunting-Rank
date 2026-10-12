@@ -68,6 +68,12 @@ enum EntityType {
   OPPORTUNITY
   MEETING
   MEETING_TYPE
+  MEMORY
+  COMMITMENT
+  RELATIONSHIP
+  KNOWLEDGE_ITEM
+  KNOWLEDGE_SOURCE
+  KNOWLEDGE_GAP
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -93,6 +99,8 @@ model Workspace {
   outboundChangedBy String?         @db.Uuid
   /// Workspace preset (docs/10 §20-30). An agent may be set lower, never higher than this.
   autonomyLevel     AutonomyLevel   @default(L1)
+  /// Granular knowledge kill rules (screen #13 §92): { pricingAnswers: false } sends every pricing question to a person.
+  knowledgeControls Json            @default("{}")
   createdAt         DateTime        @default(now()) @db.Timestamptz(3)
   updatedAt         DateTime        @updatedAt @db.Timestamptz(3)
   archivedAt        DateTime?       @db.Timestamptz(3)
@@ -172,6 +180,20 @@ model Workspace {
   meetingBriefs          MeetingBrief[]
   meetingOutcomes        MeetingOutcome[]
   meetingChanges         MeetingChange[]
+  memories               Memory[]
+  memoryCandidates       MemoryCandidate[]
+  memoryEvidence         MemoryEvidence[]
+  memoryConflicts        MemoryConflict[]
+  commitments            Commitment[]
+  relationships          Relationship[]
+  knowledgeItems         KnowledgeItem[]
+  knowledgeRevisions     KnowledgeRevision[]
+  knowledgeChunks        KnowledgeChunk[]
+  knowledgeSources       KnowledgeSource[]
+  knowledgeConflicts     KnowledgeConflict[]
+  knowledgeGaps          KnowledgeGap[]
+  knowledgeUsage         KnowledgeUsage[]
+  knowledgeFeedback      KnowledgeFeedback[]
 }
 
 enum UserStatus {
@@ -2709,6 +2731,8 @@ model ConversationReply {
   status             ReplyStatus
   statusReason       String?
   externalActionId   String?          @unique @db.Uuid
+  /// [{ itemId, revisionId, code, version, title }] — the approved knowledge revisions this reply rests on (docs/13 §83-94).
+  knowledge          Json             @default("[]")
   /// 👍/👎 + why (screen #5 §46) — controlled learning data, never auto-applied.
   feedback           Json?
   sentAt             DateTime?        @db.Timestamptz(3)
@@ -3219,4 +3243,567 @@ model MeetingChange {
   meeting   Meeting   @relation(fields: [workspaceId, meetingId], references: [workspaceId, id], onDelete: Cascade)
 
   @@index([meetingId, at])
+}
+
+// ───────────────────────────── Memory (Phase 15, docs/13 §4-29) ─────────────────────────────
+
+/// Which record a memory belongs to (screen #12 §2): a person's preference never becomes a company fact, a deal's
+/// budget never becomes the person's.
+enum MemoryScope {
+  COMPANY
+  PERSON
+  CONVERSATION
+  OPPORTUNITY
+}
+
+/// docs/13 §7-14. Commitments have their own table.
+enum MemoryType {
+  COMPANY
+  PERSON
+  CONVERSATION
+  RELATIONSHIP
+  OPPORTUNITY
+  PREFERENCE
+}
+
+/// Where a memory came from (screen #12 §6-7): the UI keeps a prospect's own words apart from a colleague's note and an
+/// AI inference.
+enum MemoryOrigin {
+  DIRECT_STATEMENT
+  MEETING_NOTE
+  HUMAN_NOTE
+  HUMAN_CORRECTION
+  AI_INFERENCE
+}
+
+/// docs/13 §15-17. Never overwritten: a newer value supersedes, a wrong one is invalidated with a reason.
+enum MemoryStatus {
+  ACTIVE
+  STALE
+  CONFLICTED
+  SUPERSEDED
+  INVALIDATED
+  ARCHIVED
+}
+
+/// docs/13 §4-6. Low-risk obvious statements are accepted automatically; budget, authority and anything unsure waits for a person.
+enum MemoryCandidateStatus {
+  PENDING
+  AUTO_ACCEPTED
+  ACCEPTED
+  NEEDS_REVIEW
+  REJECTED
+  SUPERSEDED
+}
+
+/**
+ * What we know about one company, person, conversation or deal (docs/13 §15-17, screen #12 §4-5): subject + key +
+ * value with where it came from, when it was observed, how sure we are and how long it stays true. Messages are the
+ * evidence; this is the extracted, scoped, time-aware memory. Facts (Fact table) and suppression never live here.
+ */
+model Memory {
+  id              String          @id @default(uuid()) @db.Uuid
+  workspaceId     String          @db.Uuid
+  /// Always set — every memory is reachable from its company and never leaks to another one.
+  companyId       String          @db.Uuid
+  entityType      MemoryScope
+  entityId        String          @db.Uuid
+  memoryType      MemoryType
+  /// CURRENT_SOLUTION, ROLE, BUDGET, TIMELINE, NEED, OBJECTION, QUESTION, PREFERRED_CHANNEL, MEETING_PREFERENCE, CONTACT_LATER, NOTE …
+  key             String
+  value           String
+  summary         String
+  origin          MemoryOrigin
+  confidence      ConfidenceLevel
+  status          MemoryStatus    @default(ACTIVE)
+  /// RESTRICTED = internal reasoning only (screen #12 §27-28).
+  sensitivity     String          @default("NORMAL")
+  /// False = never used to personalise outreach (inferred or sensitive).
+  useInOutreach   Boolean         @default(true)
+  observedAt      DateTime        @db.Timestamptz(3)
+  validFrom       DateTime        @default(now()) @db.Timestamptz(3)
+  /// Temporal memory: "busy this week" stops mattering (docs/13 §23, §77-82).
+  validUntil      DateTime?       @db.Timestamptz(3)
+  lastConfirmedAt DateTime        @db.Timestamptz(3)
+  /// After this the memory is STALE until re-confirmed (screen #12 §12-13).
+  recheckAfter    DateTime?       @db.Timestamptz(3)
+  /// MESSAGE / MEETING / HUMAN
+  sourceType      String
+  sourceId        String?
+  supersededById  String?         @db.Uuid
+  statusReason    String?
+  createdByType   ActorType
+  createdById     String?
+  createdAt       DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime        @updatedAt @db.Timestamptz(3)
+  version         Int             @default(1)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  evidence  MemoryEvidence[]
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, companyId, status])
+  @@index([workspaceId, entityType, entityId, key])
+  @@index([workspaceId, status, recheckAfter])
+}
+
+/// "Why do we know this?" (docs/13 §15-17): the message, meeting or note behind a memory, with the exact words.
+model MemoryEvidence {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  memoryId    String   @db.Uuid
+  sourceType  String
+  sourceId    String?
+  quote       String?
+  observedAt  DateTime @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  memory    Memory    @relation(fields: [workspaceId, memoryId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@index([memoryId])
+}
+
+/**
+ * A proposed memory (docs/13 §4-6): extraction never writes truth directly. Validation decides — auto-accept a
+ * low-risk direct statement, send budget/authority/unsure ones to a person, reject what doesn't fit.
+ */
+model MemoryCandidate {
+  id             String                @id @default(uuid()) @db.Uuid
+  workspaceId    String                @db.Uuid
+  companyId      String                @db.Uuid
+  entityType     MemoryScope
+  entityId       String                @db.Uuid
+  memoryType     MemoryType
+  key            String
+  value          String
+  summary        String
+  quote          String?
+  origin         MemoryOrigin
+  confidence     ConfidenceLevel
+  sourceType     String
+  sourceId       String
+  conversationId String?               @db.Uuid
+  meetingId      String?               @db.Uuid
+  status         MemoryCandidateStatus @default(PENDING)
+  reason         String?
+  memoryId       String?               @db.Uuid
+  decidedById    String?               @db.Uuid
+  decidedAt      DateTime?             @db.Timestamptz(3)
+  createdAt      DateTime              @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  /// One candidate per source + record + key: a retried job never proposes twice.
+  @@unique([workspaceId, sourceId, entityId, key])
+  @@index([workspaceId, status, createdAt])
+}
+
+/// Two memories that disagree (docs/13 §18-22). Never summarised into fake certainty — kept visible until resolved.
+model MemoryConflict {
+  id           String    @id @default(uuid()) @db.Uuid
+  workspaceId  String    @db.Uuid
+  companyId    String    @db.Uuid
+  memoryAId    String    @db.Uuid
+  memoryBId    String    @db.Uuid
+  key          String
+  /// VALUE / TEMPORAL / SCOPE
+  conflictType String
+  /// OPEN / RESOLVED
+  status       String    @default("OPEN")
+  /// NEWER_WINS / KEEP_A / KEEP_B / BOTH_VALID
+  resolution   String?
+  note         String?
+  resolvedById String?   @db.Uuid
+  resolvedAt   DateTime? @db.Timestamptz(3)
+  detectedAt   DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status])
+  @@index([memoryAId])
+  @@index([memoryBId])
+}
+
+/// docs/13 §23-27: a promise is operational, not a memory line.
+enum CommitmentDirection {
+  WE_PROMISED
+  PROSPECT_PROMISED
+  MUTUAL
+}
+
+enum CommitmentStatus {
+  OPEN
+  WAITING
+  DUE
+  COMPLETED
+  BROKEN
+  CANCELLED
+}
+
+/**
+ * A promise with its own lifecycle (docs/13 §23-27, screen #12 §23-25): who promised what, by when, from which words,
+ * and the evidence it was kept. The Context Builder hands open ones to the AI so it never promises twice or forgets.
+ */
+model Commitment {
+  id                 String              @id @default(uuid()) @db.Uuid
+  workspaceId        String              @db.Uuid
+  companyId          String              @db.Uuid
+  conversationId     String?             @db.Uuid
+  opportunityId      String?             @db.Uuid
+  meetingId          String?             @db.Uuid
+  personId           String?             @db.Uuid
+  direction          CommitmentDirection
+  title              String
+  detail             String?
+  dueAt              DateTime?           @db.Timestamptz(3)
+  status             CommitmentStatus    @default(OPEN)
+  ownerUserId        String?             @db.Uuid
+  /// EXTRACTED (from their words or ours) / AI_REPLY (the AI said a colleague will come back) / HUMAN
+  origin             String
+  sourceType         String
+  sourceId           String?
+  quote              String?
+  /// Stable key so the same promise is recorded once.
+  dedupeKey          String?
+  completedAt        DateTime?           @db.Timestamptz(3)
+  completionEvidence String?
+  statusReason       String?
+  createdByType      ActorType
+  createdById        String?
+  createdAt          DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime            @updatedAt @db.Timestamptz(3)
+  version            Int                 @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, status, dueAt])
+  @@index([workspaceId, companyId])
+  @@index([workspaceId, conversationId])
+}
+
+/// docs/13 §28-29. Employment stays its own table; this graph supplements it.
+enum RelationshipType {
+  WORKS_AT
+  FORMERLY_WORKED_AT
+  REFERRED_BY
+  INTRODUCED_BY
+  REPORTS_TO
+  DECISION_MAKER_FOR
+  INFLUENCER_FOR
+  PARTNER_OF
+  RELATED_COMPANY
+}
+
+/**
+ * A structured edge (screen #12 §18-19): "John referred us to Sarah", with the words it came from. The other end may
+ * not be a record yet (just a name or an email) — then `toLabel` holds it until a person links it.
+ */
+model Relationship {
+  id            String           @id @default(uuid()) @db.Uuid
+  workspaceId   String           @db.Uuid
+  companyId     String           @db.Uuid
+  /// PERSON / COMPANY
+  fromType      String
+  fromId        String           @db.Uuid
+  type          RelationshipType
+  toType        String
+  toId          String?          @db.Uuid
+  toLabel       String
+  context       String?
+  /// SUGGESTED / ACTIVE / ENDED / INVALIDATED
+  status        String           @default("SUGGESTED")
+  confidence    ConfidenceLevel
+  sourceType    String
+  sourceId      String?
+  quote         String?
+  confirmedById String?          @db.Uuid
+  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime         @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, fromId, type, toLabel])
+  @@index([workspaceId, companyId])
+}
+
+// ───────────────────────────── Knowledge Base (Phase 15, docs/13 §30-65) ─────────────────────────────
+
+/// docs/13 §30-42 (+ the business profile, screen #13 §1).
+enum KnowledgeType {
+  PROFILE
+  SERVICE
+  PRICING
+  FAQ
+  POLICY
+  INTEGRATION
+  CASE_STUDY
+  COMPETITOR
+  CLAIM
+  DOCUMENT
+  PROPOSAL_BLOCK
+}
+
+/// docs/13 §30-42. Only APPROVED (current, not disabled) knowledge carries answer authority.
+enum KnowledgeStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  STALE
+  CONFLICT
+  REJECTED
+  ARCHIVED
+}
+
+enum KnowledgeRevisionStatus {
+  DRAFT
+  IN_REVIEW
+  APPROVED
+  SUPERSEDED
+  REJECTED
+}
+
+/// Where a revision came from: typed by a person, extracted from a document, a person's answer in a conversation, an
+/// AI draft (never authority until approved), or a restore of an older version.
+enum KnowledgeOrigin {
+  HUMAN
+  DOCUMENT
+  HUMAN_ANSWER
+  AI_DRAFT
+  ROLLBACK
+}
+
+/**
+ * One piece of our business truth (docs/13 §30-42, screen #13): a service, a price, an FAQ, a policy… Its content
+ * lives in versioned revisions; `currentRevisionId` is the one the AI may use. Disabling it removes it from the AI
+ * immediately without touching history.
+ */
+model KnowledgeItem {
+  id                 String          @id @default(uuid()) @db.Uuid
+  workspaceId        String          @db.Uuid
+  /// KB-FAQ-003 — stable, human-readable, cited in audits.
+  code               String
+  type               KnowledgeType
+  title              String
+  status             KnowledgeStatus @default(DRAFT)
+  /// 1 = approved policy … 6 = historical response (screen #13 §21). Lower wins.
+  authorityLevel     Int
+  currentRevisionId  String?         @db.Uuid
+  /// The service this pricing / FAQ / integration belongs to (screen #13 §61, §78).
+  serviceItemId      String?         @db.Uuid
+  ownerUserId        String?         @db.Uuid
+  reviewIntervalDays Int?
+  lastReviewedAt     DateTime?       @db.Timestamptz(3)
+  nextReviewAt       DateTime?       @db.Timestamptz(3)
+  aiDisabled         Boolean         @default(false)
+  aiDisabledReason   String?
+  aiDisabledAt       DateTime?       @db.Timestamptz(3)
+  aiDisabledById     String?         @db.Uuid
+  /// Repeated "outdated / incorrect" feedback (screen #13 §56).
+  needsReview        Boolean         @default(false)
+  needsReviewReason  String?
+  usageCount         Int             @default(0)
+  createdById        String?         @db.Uuid
+  createdAt          DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime        @updatedAt @db.Timestamptz(3)
+  archivedAt         DateTime?       @db.Timestamptz(3)
+  version            Int             @default(1)
+
+  workspace Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  revisions KnowledgeRevision[]
+
+  @@unique([workspaceId, code])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, type, status])
+}
+
+/**
+ * One version of a knowledge item (docs/13 §30-42): structured content per type, never edited once approved. A future
+ * `effectiveFrom` schedules it (the current one stays until then); rollback creates a new version from an old one.
+ */
+model KnowledgeRevision {
+  id             String                  @id @default(uuid()) @db.Uuid
+  workspaceId    String                  @db.Uuid
+  itemId         String                  @db.Uuid
+  version        Int
+  title          String
+  content        Json
+  /// Plain-text rendering (search, chunks, the AI's view).
+  text           String
+  contentHash    String
+  status         KnowledgeRevisionStatus @default(DRAFT)
+  origin         KnowledgeOrigin
+  effectiveFrom  DateTime?               @db.Timestamptz(3)
+  /// KnowledgeSource ids (documents) this was extracted from.
+  sourceIds      String[]
+  gapId          String?                 @db.Uuid
+  changeNote     String?
+  createdByType  ActorType
+  createdById    String?
+  submittedAt    DateTime?               @db.Timestamptz(3)
+  approvedById   String?                 @db.Uuid
+  approvedAt     DateTime?               @db.Timestamptz(3)
+  rejectedReason String?
+  publishedAt    DateTime?               @db.Timestamptz(3)
+  supersededAt   DateTime?               @db.Timestamptz(3)
+  createdAt      DateTime                @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  item      KnowledgeItem    @relation(fields: [workspaceId, itemId], references: [workspaceId, id], onDelete: Cascade)
+  chunks    KnowledgeChunk[]
+
+  @@unique([itemId, version])
+  @@unique([workspaceId, id])
+  @@index([workspaceId, status])
+}
+
+/**
+ * A retrievable piece of an approved revision (docs/13 §58-65), cut on semantic boundaries (an FAQ, a section, a
+ * clause). The vector points back to the exact revision; it is support for retrieval, never truth.
+ */
+model KnowledgeChunk {
+  id             String                 @id @default(uuid()) @db.Uuid
+  workspaceId    String                 @db.Uuid
+  itemId         String                 @db.Uuid
+  revisionId     String                 @db.Uuid
+  chunkIndex     Int
+  heading        String?
+  content        String
+  contentHash    String
+  embedding      Unsupported("vector")?
+  /// provider/model/dimensions — vectors of different models are never compared (docs/13 §58-65).
+  embeddingModel String?
+  embeddedAt     DateTime?              @db.Timestamptz(3)
+  createdAt      DateTime               @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  revision  KnowledgeRevision @relation(fields: [workspaceId, revisionId], references: [workspaceId, id], onDelete: Cascade)
+
+  @@unique([revisionId, chunkIndex])
+  @@index([workspaceId, itemId])
+}
+
+/**
+ * An uploaded document (docs/13 §47-57): a source, never truth. The file is in object storage; the database keeps its
+ * metadata and the candidates extracted from it — which a person reviews before anything is approved.
+ */
+model KnowledgeSource {
+  id                   String    @id @default(uuid()) @db.Uuid
+  workspaceId          String    @db.Uuid
+  fileName             String
+  contentType          String
+  sizeBytes            Int
+  sha256               String
+  storageKey           String
+  storageIntegrationId String?   @db.Uuid
+  /// UPLOADED / PROCESSING / EXTRACTED / FAILED / ARCHIVED
+  status               String    @default("UPLOADED")
+  statusReason         String?
+  textLength           Int?
+  candidates           Int       @default(0)
+  conflicts            Int       @default(0)
+  uploadedById         String?   @db.Uuid
+  uploadedAt           DateTime  @default(now()) @db.Timestamptz(3)
+  processedAt          DateTime? @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, sha256])
+  @@index([workspaceId, uploadedAt])
+}
+
+/**
+ * Two pieces of knowledge that disagree (docs/13 §47-57, screen #13 §22): "Pricing.pdf says $2,000, the approved price
+ * says $1,500". Until resolved, the AI does not answer from either.
+ */
+model KnowledgeConflict {
+  id              String    @id @default(uuid()) @db.Uuid
+  workspaceId     String    @db.Uuid
+  itemId          String    @db.Uuid
+  revisionId      String?   @db.Uuid
+  otherItemId     String?   @db.Uuid
+  otherRevisionId String?   @db.Uuid
+  sourceId        String?   @db.Uuid
+  topic           String
+  /// VALUE_CONFLICT / TEMPORAL_CONFLICT / SCOPE_CONFLICT / POLICY_CONFLICT / DUPLICATE / AMBIGUOUS
+  conflictType    String
+  detail          String
+  /// OPEN / RESOLVED / DISMISSED
+  status          String    @default("OPEN")
+  resolution      String?
+  resolvedById    String?   @db.Uuid
+  resolvedAt      DateTime? @db.Timestamptz(3)
+  detectedAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, status])
+  @@index([itemId])
+}
+
+/**
+ * A question the AI could not answer from approved knowledge (docs/13 §47-57, screen #13 §47-50): how often, in
+ * which conversations, how much pipeline it touches. A person's answer becomes a draft; approval resolves the gap.
+ */
+model KnowledgeGap {
+  id              String    @id @default(uuid()) @db.Uuid
+  workspaceId     String    @db.Uuid
+  /// Normalised question — "how long does setup take" and "How long does the setup take?" are one gap.
+  key             String
+  question        String
+  topic           String
+  occurrences     Int       @default(1)
+  conversationIds String[]
+  companyIds      String[]
+  /// OPEN / DRAFTED / IN_REVIEW / RESOLVED / DISMISSED
+  status          String    @default("OPEN")
+  priority        Int       @default(0)
+  priorityReasons String[]
+  draftItemId     String?   @db.Uuid
+  resolvedItemId  String?   @db.Uuid
+  resolvedAt      DateTime? @db.Timestamptz(3)
+  firstSeenAt     DateTime  @default(now()) @db.Timestamptz(3)
+  lastSeenAt      DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, key])
+  @@index([workspaceId, status, priority])
+}
+
+/// "Message 123 used Pricing v7" (docs/13 §83-94): which revision supported which answer — history stays linked to v7.
+model KnowledgeUsage {
+  id             String   @id @default(uuid()) @db.Uuid
+  workspaceId    String   @db.Uuid
+  itemId         String   @db.Uuid
+  revisionId     String   @db.Uuid
+  version        Int
+  /// REPLY / SIMULATION / BRIEF
+  usedByType     String
+  usedById       String?
+  conversationId String?  @db.Uuid
+  question       String?
+  at             DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, usedByType, usedById, revisionId])
+  @@index([workspaceId, itemId, at])
+}
+
+/// [Helpful] [Outdated] [Incorrect] [Incomplete] (screen #13 §56).
+model KnowledgeFeedback {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  itemId      String   @db.Uuid
+  revisionId  String?  @db.Uuid
+  kind        String
+  note        String?
+  userId      String?  @db.Uuid
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, itemId])
 }

@@ -12,3 +12,5 @@ export * from './policy.js';
 export * from './conversations.js';
 export * from './opportunities.js';
 export * from './meetings.js';
+export * from './knowledge.js';
+export * from './memory.js';

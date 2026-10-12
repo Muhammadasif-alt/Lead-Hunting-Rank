@@ -21,16 +21,18 @@ import { ApiError, api, errorMessage, patch, post } from "@/lib/api";
 import { FRESHNESS, STATUS_LABEL, formatAgo, formatDate, formatPhone, location, type Overview } from "@/lib/crm";
 import { AiAssessment } from "./ai";
 import { DoNotContact } from "./dnc";
+import { MemoryTab } from "./memory";
 import { Contactability, DigitalPresenceTab, Hypotheses, ResearchControl } from "./research";
 import { ActivityTab, ContactList, EvidenceTab, IntelligenceTab, PeopleTab, Section } from "./sections";
 
-type Tab = "overview" | "people" | "digital" | "intelligence" | "evidence" | "activity";
+type Tab = "overview" | "people" | "digital" | "intelligence" | "memory" | "evidence" | "activity";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "people", label: "People" },
   { key: "digital", label: "Digital presence" },
   { key: "intelligence", label: "Intelligence" },
+  { key: "memory", label: "Memory" },
   { key: "evidence", label: "Evidence" },
   { key: "activity", label: "Activity" },
 ];
@@ -39,17 +41,16 @@ const TABS: { key: Tab; label: string }[] = [
 const LATER: { label: string; phase: number }[] = [
   { label: "Conversations", phase: 11 },
   { label: "Opportunities", phase: 12 },
-  { label: "Memory", phase: 14 },
 ];
 
 /**
  * Company 360° V1 (screen #4, Phase 6). Answers: who are they, where did the data come from, who works there, how can
  * we contact them, what do we know, and how fresh is it. Buttons follow `allowedActions` from the API.
  */
-export function Company360({ id }: { id: string }) {
+export function Company360({ id, initialTab }: { id: string; initialTab?: string }) {
   const [data, setData] = useState<Overview | null>(null);
   const [error, setError] = useState<{ message: string; status?: number } | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(() => TABS.find((t) => t.key === initialTab)?.key ?? "overview");
 
   const load = useCallback(async () => {
     try {
@@ -200,6 +201,7 @@ export function Company360({ id }: { id: string }) {
       {tab === "people" && <PeopleTab data={data} onChange={load} />}
       {tab === "digital" && <DigitalPresenceTab data={data} />}
       {tab === "intelligence" && <IntelligenceTab data={data} onChange={load} />}
+      {tab === "memory" && <MemoryTab companyId={data.company.id} />}
       {tab === "evidence" && <EvidenceTab data={data} />}
       {tab === "activity" && <ActivityTab companyId={data.company.id} />}
     </div>

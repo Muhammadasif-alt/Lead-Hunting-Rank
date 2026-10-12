@@ -273,6 +273,26 @@ export interface LLMProvider extends ProviderAdapter {
   generateStructured<T>(request: StructuredLlmRequest<T>, options: CallOptions): Promise<LlmStructuredResult<T>>;
 }
 
+// ───────────────────────────── embeddings ─────────────────────────────
+
+export interface EmbeddingRequest {
+  texts: string[];
+  /** Documents being indexed vs. a query being searched (some models embed them differently). */
+  purpose: 'DOCUMENT' | 'QUERY';
+}
+
+export interface EmbeddingResult extends Usage {
+  vectors: number[][];
+  /** provider/model — stored with every vector; vectors of different models are never compared (docs/13 §58-65). */
+  model: string;
+  dimensions: number;
+}
+
+/** Text → vectors for semantic retrieval (docs/13 §58-65). Retrieval support only — never a source of truth. */
+export interface EmbeddingProvider extends ProviderAdapter {
+  embed(request: EmbeddingRequest, options: CallOptions): Promise<EmbeddingResult>;
+}
+
 // ───────────────────────────── storage / notifications ─────────────────────────────
 
 export interface StoredObject {
@@ -316,7 +336,7 @@ export interface CapabilityAdapters {
   WEBSITE_FETCH: WebsiteProvider;
   LLM_REASONING: LLMProvider;
   LLM_EXTRACTION: LLMProvider;
-  EMBEDDINGS: LLMProvider;
+  EMBEDDINGS: EmbeddingProvider;
   STORAGE: StorageProvider;
   NOTIFY: NotificationProvider;
 }

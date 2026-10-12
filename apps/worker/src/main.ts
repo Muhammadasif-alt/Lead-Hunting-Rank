@@ -16,6 +16,7 @@ import {
   type JobHandler,
 } from '@revenue-os/events/runtime';
 import { FAKE_SEND_ACTION, FakeSideEffectProvider, RedisFakeProviderStore } from '@revenue-os/events/testing';
+import { embedRevision, knowledgeSweep, memorySweep, processDocument, resolveAnsweredGaps } from '@revenue-os/knowledge';
 import {
   meetingSweep,
   prepareStep,
@@ -68,6 +69,7 @@ const providers = createProviderRuntime(db, {
   redis: connection,
   prefix,
   llm: { provider: config.LLM_PROVIDER, apiKey: config.LLM_API_KEY },
+  embeddings: { provider: config.EMBEDDINGS_PROVIDER, apiKey: config.EMBEDDINGS_API_KEY, model: config.EMBEDDINGS_MODEL },
   credentials: { db, encryptionKey: config.ENCRYPTION_KEY, google: googleOAuthConfig(config) ?? undefined },
   logger: { warn: (obj, msg) => logger.warn(obj, msg) },
 });
@@ -143,6 +145,27 @@ const conversationProcess: JobHandler = {
 const conversationSweep: JobHandler = {
   timeoutMs: 60_000,
   handle: async () => wakeSnoozedConversations(db),
+};
+
+// Business Brain (Phase 15): vectors for newly published knowledge (retrieval support, never truth); uploaded documents
+// parsed into candidates for review; the sweep publishes scheduled versions, marks overdue reviews and memories stale,
+// archives expired memory and marks promises due.
+const brain = { db, providers: providers.gateway };
+const knowledgeEmbed: JobHandler = {
+  timeoutMs: 2 * 60_000,
+  handle: async (data) => {
+    const { workspaceId, revisionId } = data as unknown as { workspaceId: string; revisionId: string };
+    const result = await embedRevision(brain, { workspaceId, revisionId });
+    return { ...result, gapsResolved: await resolveAnsweredGaps(brain, workspaceId) };
+  },
+};
+const knowledgeDocument: JobHandler = {
+  timeoutMs: 3 * 60_000,
+  handle: async (data) => processDocument(brain, data as unknown as { sourceId: string }),
+};
+const brainSweep: JobHandler = {
+  timeoutMs: 3 * 60_000,
+  handle: async () => ({ knowledge: await knowledgeSweep(brain), memory: await memorySweep(brain) }),
 };
 
 const providerHealthCheck: JobHandler = {
@@ -228,6 +251,7 @@ const workers = [
       [JOBS.campaignSweep]: campaignSweep,
       [JOBS.conversationSweep]: conversationSweep,
       [JOBS.meetingSweep]: meetingSweepJob,
+      [JOBS.brainSweep]: brainSweep,
     },
   }),
   createQueueWorker({
@@ -258,7 +282,13 @@ const workers = [
     logger,
     metrics,
     concurrency: 2,
-    handlers: { [JOBS.aiCompanyIntelligence]: aiCompanyIntelligence, [JOBS.campaignPrepareStep]: campaignPrepare, [JOBS.conversationProcess]: conversationProcess },
+    handlers: {
+      [JOBS.aiCompanyIntelligence]: aiCompanyIntelligence,
+      [JOBS.campaignPrepareStep]: campaignPrepare,
+      [JOBS.conversationProcess]: conversationProcess,
+      [JOBS.knowledgeEmbed]: knowledgeEmbed,
+      [JOBS.knowledgeDocumentProcess]: knowledgeDocument,
+    },
   }),
   createQueueWorker({
     queue: QUEUES.outbound,
@@ -344,6 +374,10 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('meeting-sweep', { every: 5 * 60_000 }, { name: JOBS.meetingSweep, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register meeting sweep schedule'));
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('brain-sweep', { every: 5 * 60_000 }, { name: JOBS.brainSweep, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register brain sweep schedule'));
 producer
   .queue(QUEUES.inbound)
   .upsertJobScheduler('mailbox-sync', { every: 2 * 60_000 }, { name: JOBS.mailboxSync, data: { correlationId: 'scheduler' } })

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { ScreenPlaceholder } from "@/components/app/ScreenPlaceholder";
+import { Memory } from "./Memory";
 
 export const metadata: Metadata = { title: "AI Memory" };
 
-export default function Page() {
-  return <ScreenPlaceholder href="/memory" />;
+export default async function Page({ searchParams }: { searchParams: Promise<{ tab?: string; status?: string }> }) {
+  const { tab, status } = await searchParams;
+  return <Memory tab={tab ?? "overview"} status={status} />;
 }

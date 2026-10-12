@@ -316,7 +316,7 @@ export function readMessage(input: { text: string; subject?: string; from?: stri
 
   const reasons: string[] = [];
   if (riskFlags.length) reasons.push(riskFlags.map((f) => RISK_INFO[f]).join('; '));
-  if (primary === 'PRICING') reasons.push('Pricing needs a person (no approved price list yet)');
+  if (primary === 'PRICING') reasons.push('Pricing needs a person unless approved pricing answers it');
   if (primary === 'MEETING_REQUEST') reasons.push('A person books the meeting');
   if (primary === 'REFERRAL' || primary === 'WRONG_PERSON') reasons.push('A person decides whether to contact the referred person');
   if (primary === 'UNKNOWN') reasons.push('Could not tell what they want');

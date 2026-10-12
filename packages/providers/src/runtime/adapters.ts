@@ -19,6 +19,7 @@ import { GmailProvider } from '../email/gmail.js';
 import { refreshGoogleToken, type GoogleTokens } from '../email/google-oauth.js';
 import { ProviderCallError } from '../core/errors.js';
 import { AnthropicProvider } from '../llm/anthropic.js';
+import { VoyageEmbeddingProvider } from '../llm/voyage.js';
 import { LocalStorageProvider } from '../storage/local.js';
 import { HttpWebsiteFetcher } from '../web/fetcher.js';
 import { PrismaHealthSink, PrismaUsageSink } from './sinks.js';
@@ -38,6 +39,8 @@ export interface AdapterFactoryOptions {
   prefix?: string;
   /** Server LLM configuration (LLM_PROVIDER / LLM_API_KEY). */
   llm?: { provider: string; apiKey?: string };
+  /** Server embeddings configuration (EMBEDDINGS_PROVIDER / EMBEDDINGS_API_KEY / EMBEDDINGS_MODEL). */
+  embeddings?: { provider: string; apiKey?: string; model?: string };
   /** Encrypted per-integration credentials (OAuth tokens) and the Google OAuth client to refresh them. */
   credentials?: { db: PrismaClient; encryptionKey?: string; google?: { clientId: string; clientSecret: string } };
   fetch?: typeof fetch;
@@ -99,6 +102,8 @@ export function createAdapterFactory(options: AdapterFactoryOptions): AdapterFac
         return options.credentials ? new GoogleCalendarProvider({ getAccessToken: googleTokenSource(integration.id, options.credentials, options.fetch), fetch: options.fetch }) : null;
       case 'anthropic':
         return options.llm?.provider === 'anthropic' && options.llm.apiKey ? new AnthropicProvider({ apiKey: options.llm.apiKey }) : null;
+      case 'voyage':
+        return options.embeddings?.provider === 'voyage' && options.embeddings.apiKey ? new VoyageEmbeddingProvider({ apiKey: options.embeddings.apiKey, model: options.embeddings.model, fetch: options.fetch }) : null;
       default:
         return shared[integration.provider as keyof typeof shared] ?? null;
     }
@@ -127,7 +132,7 @@ const DEFAULT_RATE_LIMITS: Record<string, ProviderBinding['rateLimit']> = {
 };
 
 /** The fetcher keeps its own per-page deadline (a slow site is a website fact); the gateway's must outlast it. */
-const DEFAULT_TIMEOUTS: Record<string, number> = { web_fetcher: 20_000, anthropic: 120_000 };
+const DEFAULT_TIMEOUTS: Record<string, number> = { web_fetcher: 20_000, anthropic: 120_000, voyage: 30_000 };
 
 export function toBinding(integration: Pick<Integration, 'id' | 'workspaceId' | 'provider' | 'capabilities'>, factory: AdapterFactory): ProviderBinding | null {
   const adapter = factory.forIntegration(integration);

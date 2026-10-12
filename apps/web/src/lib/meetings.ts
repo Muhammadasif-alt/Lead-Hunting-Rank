@@ -53,6 +53,8 @@ export interface BriefContent {
   dontAskAgain: string[];
   objective: string;
   commitments: string[];
+  remembered?: { label: string; value: string; origin: string }[];
+  relevantKnowledge?: { question: string; decision: "ANSWER" | "ESCALATE"; answer: string | null; source: string | null; reason: string }[];
 }
 
 export interface MeetingDetail {

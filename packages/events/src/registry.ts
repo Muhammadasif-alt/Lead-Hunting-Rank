@@ -141,6 +141,42 @@ export interface EventPayloads {
   MeetingBriefGenerated: { meetingId: string; version: number; gaps: number };
   MeetingTypeUpdated: { meetingTypeId: string; changedFields: string[] };
   SchedulingProfileUpdated: { userId: string; changedFields: string[] };
+  // memory (docs/13 §100-113) — keys and ids, never the remembered value or the quote
+  MemoryCandidateCreated: { candidateId: string; companyId: string; key: string; status: string };
+  MemoryCandidateRejected: { candidateId: string; key: string };
+  MemoryAccepted: { memoryId: string; companyId: string; entityType: string; key: string; via: 'AUTO' | 'PERSON' | 'NOTE' };
+  MemoryCorrected: { memoryId: string; replacedMemoryId: string; companyId: string; key: string };
+  MemorySuperseded: { memoryId: string; supersededById: string; key: string };
+  MemoryInvalidated: { memoryId: string; key: string };
+  MemoryVerified: { memoryId: string; key: string };
+  MemoryExpired: { memoryId: string; key: string; status: 'STALE' | 'ARCHIVED' };
+  MemoryConflictDetected: { conflictId: string; memoryAId: string; memoryBId: string; key: string };
+  MemoryConflictResolved: { conflictId: string; resolution: string };
+  CommitmentCreated: { commitmentId: string; companyId: string; direction: string; origin: string; dueAt: string | null };
+  CommitmentDue: { commitmentId: string; companyId: string; direction: string };
+  CommitmentCompleted: { commitmentId: string; companyId: string };
+  CommitmentBroken: { commitmentId: string; companyId: string };
+  CommitmentCancelled: { commitmentId: string; companyId: string };
+  RelationshipCreated: { relationshipId: string; companyId: string; type: string; status: string };
+  RelationshipUpdated: { relationshipId: string; status: string };
+  // knowledge (docs/13 §100-113)
+  KnowledgeDraftCreated: { itemId: string; revisionId: string; type: string; version: number; origin: string };
+  KnowledgeReviewRequested: { itemId: string; revisionId: string; version: number };
+  KnowledgeApproved: { itemId: string; revisionId: string; version: number; effectiveFrom: string | null };
+  KnowledgePublished: { itemId: string; revisionId: string; version: number; previousRevisionId: string | null };
+  KnowledgeRejected: { itemId: string; revisionId: string; version: number };
+  KnowledgeStale: { itemId: string; reason: string };
+  KnowledgeArchived: { itemId: string };
+  KnowledgeDisabled: { itemId: string };
+  KnowledgeEnabled: { itemId: string };
+  KnowledgeConflictDetected: { conflictId: string; itemId: string; conflictType: string };
+  KnowledgeConflictResolved: { conflictId: string; itemId: string; resolution: string };
+  KnowledgeGapDetected: { gapId: string; topic: string; occurrences: number };
+  KnowledgeGapResolved: { gapId: string; itemId: string | null; status: string };
+  KnowledgeSourceAdded: { sourceId: string; contentType: string; sizeBytes: number };
+  KnowledgeSourceProcessed: { sourceId: string; status: string; candidates: number; conflicts: number };
+  KnowledgeControlsChanged: { changedFields: string[] };
+  KnowledgeFeedbackRecorded: { itemId: string; kind: string };
   // evidence
   EvidenceRecorded: { evidenceId: string; entityType: string; entityId: string; sourceType: string };
   FactRecorded: { factId: string; entityType: string; entityId: string; field: string; outcome: 'CREATED' | 'CONFIRMED' };
@@ -208,7 +244,13 @@ export type AggregateType =
   | 'CONVERSATION'
   | 'OPPORTUNITY'
   | 'MEETING'
-  | 'MEETING_TYPE';
+  | 'MEETING_TYPE'
+  | 'MEMORY'
+  | 'COMMITMENT'
+  | 'RELATIONSHIP'
+  | 'KNOWLEDGE_ITEM'
+  | 'KNOWLEDGE_SOURCE'
+  | 'KNOWLEDGE_GAP';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -235,7 +277,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales' | 'meetings';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales' | 'meetings' | 'memory' | 'knowledge';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -295,6 +337,24 @@ const processConversationMessage: EventRoute = {
   job: JOBS.conversationProcess,
   priority: PRIORITY.HIGH,
   toJobData: (e) => ({ conversationId: e.aggregateId, messageId: e.payload.messageId, schemaVersion: 1 }),
+};
+
+/** A published revision's chunks get vectors (only chunks whose text has no vector for the current model). */
+const embedKnowledge: EventRoute = {
+  consumer: 'knowledge.embed-published',
+  queue: QUEUES.ai,
+  job: JOBS.knowledgeEmbed,
+  priority: PRIORITY.BACKGROUND,
+  toJobData: (e) => ({ itemId: e.aggregateId, revisionId: e.payload.revisionId, schemaVersion: 1 }),
+};
+
+/** An uploaded document is parsed and mined for candidates — a source, never truth. */
+const processKnowledgeSource: EventRoute = {
+  consumer: 'knowledge.process-document',
+  queue: QUEUES.ai,
+  job: JOBS.knowledgeDocumentProcess,
+  priority: PRIORITY.NORMAL,
+  toJobData: (e) => ({ sourceId: e.aggregateId, schemaVersion: 1 }),
 };
 
 const entity = (owner: EventDefinition['owner'], aggregateType: AggregateType, description: string, pii: 'none' | 'low' = 'none'): EventDefinition => ({
@@ -410,6 +470,40 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   MeetingNoShow: entity('meetings', 'MEETING', 'The prospect did not attend (not a lost deal)'),
   MeetingBriefGenerated: entity('meetings', 'MEETING', 'A pre-meeting brief was prepared from current data'),
   MeetingTypeUpdated: entity('meetings', 'MEETING_TYPE', 'A meeting type was created or changed (field names, not values)'),
+  MemoryCandidateCreated: entity('memory', 'MEMORY', 'Extraction proposed a memory (accepted automatically or waiting for a person)'),
+  MemoryCandidateRejected: entity('memory', 'MEMORY', 'A person rejected a proposed memory'),
+  MemoryAccepted: entity('memory', 'MEMORY', 'A memory became active (auto-accepted, confirmed by a person, or a note)'),
+  MemoryCorrected: entity('memory', 'MEMORY', 'A person corrected a memory — the old one is kept as history'),
+  MemorySuperseded: entity('memory', 'MEMORY', 'A newer statement replaced a memory (history kept)'),
+  MemoryInvalidated: entity('memory', 'MEMORY', 'A person marked a memory incorrect — the AI stops using it'),
+  MemoryVerified: entity('memory', 'MEMORY', 'A memory was confirmed again (fresh again)'),
+  MemoryExpired: entity('memory', 'MEMORY', 'A memory passed its re-check date (STALE) or its validity (ARCHIVED)'),
+  MemoryConflictDetected: entity('memory', 'MEMORY', 'Two memories disagree — kept visible until resolved'),
+  MemoryConflictResolved: entity('memory', 'MEMORY', 'A memory conflict was resolved (newer wins, keep one, or both valid)'),
+  CommitmentCreated: entity('memory', 'COMMITMENT', 'A promise was recorded (ours or theirs) with its due date'),
+  CommitmentDue: entity('memory', 'COMMITMENT', 'A promise reached its due date'),
+  CommitmentCompleted: entity('memory', 'COMMITMENT', 'A promise was kept, with evidence'),
+  CommitmentBroken: entity('memory', 'COMMITMENT', 'A promise was not kept'),
+  CommitmentCancelled: entity('memory', 'COMMITMENT', 'A promise no longer applies'),
+  RelationshipCreated: entity('memory', 'RELATIONSHIP', 'A relationship edge was suggested or recorded (e.g. a referral)'),
+  RelationshipUpdated: entity('memory', 'RELATIONSHIP', 'A relationship was confirmed, ended or marked wrong'),
+  KnowledgeDraftCreated: entity('knowledge', 'KNOWLEDGE_ITEM', 'A knowledge draft was created (person, document, human answer, rollback) — not used by AI'),
+  KnowledgeReviewRequested: entity('knowledge', 'KNOWLEDGE_ITEM', 'A draft was submitted for approval'),
+  KnowledgeApproved: entity('knowledge', 'KNOWLEDGE_ITEM', 'A person approved a revision (live now or at its effective date)'),
+  KnowledgePublished: { ...entity('knowledge', 'KNOWLEDGE_ITEM', 'A revision became the current truth the AI may use'), routes: [embedKnowledge] },
+  KnowledgeRejected: entity('knowledge', 'KNOWLEDGE_ITEM', 'A revision was rejected'),
+  KnowledgeStale: entity('knowledge', 'KNOWLEDGE_ITEM', 'Knowledge passed its review date or was reported outdated'),
+  KnowledgeArchived: entity('knowledge', 'KNOWLEDGE_ITEM', 'Knowledge was archived (history keeps its references)'),
+  KnowledgeDisabled: entity('knowledge', 'KNOWLEDGE_ITEM', 'Emergency: the item is unavailable to the AI immediately'),
+  KnowledgeEnabled: entity('knowledge', 'KNOWLEDGE_ITEM', 'The item is available to the AI again'),
+  KnowledgeConflictDetected: entity('knowledge', 'KNOWLEDGE_ITEM', 'Two pieces of knowledge disagree — the AI does not answer from them'),
+  KnowledgeConflictResolved: entity('knowledge', 'KNOWLEDGE_ITEM', 'A knowledge conflict was resolved or dismissed'),
+  KnowledgeGapDetected: entity('knowledge', 'KNOWLEDGE_GAP', 'A question the AI could not answer from approved knowledge (new or asked again)'),
+  KnowledgeGapResolved: entity('knowledge', 'KNOWLEDGE_GAP', 'Approved knowledge now answers the gap (or it was dismissed)'),
+  KnowledgeSourceAdded: { ...entity('knowledge', 'KNOWLEDGE_SOURCE', 'A document was uploaded (a source, not truth)'), routes: [processKnowledgeSource] },
+  KnowledgeSourceProcessed: entity('knowledge', 'KNOWLEDGE_SOURCE', 'A document was parsed and its candidates extracted for review'),
+  KnowledgeControlsChanged: entity('knowledge', 'WORKSPACE', 'Granular knowledge kill rules changed (e.g. AI pricing answers off)'),
+  KnowledgeFeedbackRecorded: entity('knowledge', 'KNOWLEDGE_ITEM', 'Helpful / outdated / incorrect / incomplete feedback on an item'),
   SchedulingProfileUpdated: entity('meetings', 'WORKSPACE', 'A team member changed when they can be booked'),
   OutboundStateChanged: entity('policy', 'WORKSPACE', 'Outbound was paused, emergency-stopped or resumed (kill switch)'),
   PolicyUpdated: entity('policy', 'WORKSPACE', 'The autonomy level or a configurable rule changed (new policy version)'),
