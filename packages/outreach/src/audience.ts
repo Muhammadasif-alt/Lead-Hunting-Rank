@@ -13,6 +13,10 @@ export interface AudienceFilter {
   opportunityKeys?: string[];
   /** Latest AI priority assessment is one of these. */
   priorities?: ('HIGH' | 'MEDIUM' | 'LOW')[];
+  /** Has an open ACTIONABLE signal of one of these types (Phase 16 signal-based campaigns). */
+  signalTypes?: string[];
+  /** Only companies with an open signal a person or rule marked as a campaign candidate (cold prospects only). */
+  signalCandidatesOnly?: boolean;
 }
 
 export interface Candidate {
@@ -48,6 +52,8 @@ export function parseAudience(json: unknown): AudienceFilter {
     industries: strings(a.industries),
     opportunityKeys: strings(a.opportunityKeys),
     priorities: strings(a.priorities)?.filter((p): p is 'HIGH' | 'MEDIUM' | 'LOW' => ['HIGH', 'MEDIUM', 'LOW'].includes(p)),
+    signalTypes: strings(a.signalTypes),
+    signalCandidatesOnly: a.signalCandidatesOnly === true ? true : undefined,
   };
 }
 
@@ -72,6 +78,9 @@ export async function findAudience(db: Db, workspaceId: string, filter: Audience
   if (filter.industries?.length) and.push({ OR: filter.industries.map((i) => ({ industry: { contains: i, mode: 'insensitive' as const } })) });
   if (filter.opportunityKeys?.length) and.push({ hypotheses: { some: { key: { in: filter.opportunityKeys }, status: { in: ['ACTIVE', 'SUPPORTED', 'CANDIDATE'] } } } });
   if (filter.priorities?.length) and.push({ assessments: { some: { dimension: 'PRIORITY', supersededAt: null, level: { in: filter.priorities } } } });
+  // A signal never authorises outreach by itself: it only narrows who is considered; every check below still applies.
+  if (filter.signalTypes?.length) and.push({ signals: { some: { type: { in: filter.signalTypes }, status: 'ACTIONABLE', expiresAt: { gt: now } } } });
+  if (filter.signalCandidatesOnly) and.push({ signals: { some: { campaignCandidate: true, status: { in: ['ACTIONABLE', 'ACTED_ON'] }, expiresAt: { gt: now } } } });
   if (and.length) where.AND = and;
 
   const companies = await db.company.findMany({

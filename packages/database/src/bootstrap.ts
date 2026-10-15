@@ -143,5 +143,30 @@ export async function provisionWorkspaceDefaults(db: Db, workspaceId: string): P
   });
 
   await provisionMeetingTypes(db, workspaceId);
+  await provisionSignalDefaults(db, workspaceId);
   return roleIds;
+}
+
+/** Default watchlists (kept in sync by the signal sweep) — created once per workspace. */
+const DEFAULT_WATCHLISTS = [
+  { name: 'Open deals', kind: 'OPEN_DEALS', priority: 'HIGH', description: 'Companies with an open opportunity — changes go to the deal owner' },
+  { name: 'Lost deals — timing', kind: 'LOST_DEALS', priority: 'NORMAL', description: 'Lost deals watched for their revisit date and for changes' },
+  { name: 'Existing customers', kind: 'CUSTOMERS', priority: 'NORMAL', description: 'Customers — expansion signals go to the account owner, never a cold campaign' },
+] as const;
+
+/** Default signal rules (screen #9 §22-24). None of them sends anything. */
+const DEFAULT_SIGNAL_RULES = [
+  { name: 'Follow-ups and explicit buying signals go to the top', conditions: { categories: ['RELATIONSHIP', 'CONVERSATION'] }, actions: ['PRIORITY', 'NOTIFY_OWNER'] },
+  { name: 'Strong growth signals on good-fit companies → research first', conditions: { categories: ['GROWTH'], minStrength: 'STRONG', icpLevels: ['HIGH'] }, actions: ['RESEARCH', 'PRIORITY'] },
+  { name: 'Ignore "website back online" noise', conditions: { types: ['WEBSITE_BACK'] }, actions: ['IGNORE'] },
+];
+
+/** Creates the default watchlists and signal rules a workspace has none of yet. Idempotent. */
+export async function provisionSignalDefaults(db: Db, workspaceId: string): Promise<void> {
+  if ((await db.signalWatchlist.count({ where: { workspaceId } })) === 0) {
+    await db.signalWatchlist.createMany({ data: DEFAULT_WATCHLISTS.map((w) => ({ workspaceId, ...w })), skipDuplicates: true });
+  }
+  if ((await db.signalRule.count({ where: { workspaceId } })) === 0) {
+    await db.signalRule.createMany({ data: DEFAULT_SIGNAL_RULES.map((r, position) => ({ workspaceId, name: r.name, conditions: r.conditions, actions: r.actions, position })) });
+  }
 }

@@ -23,15 +23,17 @@ import { AiAssessment } from "./ai";
 import { DoNotContact } from "./dnc";
 import { MemoryTab } from "./memory";
 import { Contactability, DigitalPresenceTab, Hypotheses, ResearchControl } from "./research";
+import { IntentBlock, SignalsTab } from "./signals";
 import { ActivityTab, ContactList, EvidenceTab, IntelligenceTab, PeopleTab, Section } from "./sections";
 
-type Tab = "overview" | "people" | "digital" | "intelligence" | "memory" | "evidence" | "activity";
+type Tab = "overview" | "people" | "digital" | "intelligence" | "signals" | "memory" | "evidence" | "activity";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "overview", label: "Overview" },
   { key: "people", label: "People" },
   { key: "digital", label: "Digital presence" },
   { key: "intelligence", label: "Intelligence" },
+  { key: "signals", label: "Signals" },
   { key: "memory", label: "Memory" },
   { key: "evidence", label: "Evidence" },
   { key: "activity", label: "Activity" },
@@ -201,6 +203,7 @@ export function Company360({ id, initialTab }: { id: string; initialTab?: string
       {tab === "people" && <PeopleTab data={data} onChange={load} />}
       {tab === "digital" && <DigitalPresenceTab data={data} />}
       {tab === "intelligence" && <IntelligenceTab data={data} onChange={load} />}
+      {tab === "signals" && <SignalsTab companyId={data.company.id} />}
       {tab === "memory" && <MemoryTab companyId={data.company.id} />}
       {tab === "evidence" && <EvidenceTab data={data} />}
       {tab === "activity" && <ActivityTab companyId={data.company.id} />}
@@ -331,7 +334,7 @@ function Header({ data, onChange }: { data: Overview; onChange: () => Promise<vo
           }
         />
         <OpportunityBlock data={data} />
-        <ScoreBlock label="Intent" pending="Signals in Phase 16" />
+        <IntentBlock companyId={c.id} />
         <div className="card p-4">
           <div className="text-xs text-muted">Data quality</div>
           <div className="mt-1 flex flex-wrap items-center gap-2">

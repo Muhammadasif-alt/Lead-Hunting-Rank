@@ -23,7 +23,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 13 | Qualification + Opportunities | ✅ done 2026-10-09 |
 | 14 | Calendar + Meetings | ✅ done 2026-10-09 |
 | 15 | Memory + Knowledge | ✅ done 2026-10-12 |
-| 16 … 24 | Signals + Intent → … → Production + autonomy rollout | ⬜ |
+| 16 | Signals + Intent | ✅ done 2026-10-15 |
+| 17 … 24 | Analytics + Attribution → … → Production + autonomy rollout | ⬜ |
 
 Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy Engine, §67-76 Phase 11 Campaigns, … §147-155 Phase 24). The short list in docs/17 §1 has no separate policy phase, so its later numbers are one lower.
 
@@ -238,6 +239,19 @@ DoD: "AI can answer business-specific questions from approved truth and safely i
 - Deferred by plan: S3 file storage (Phase 22), AI-drafted knowledge from documents with an LLM, proposal generator, knowledge analytics (Phase 17), memory extraction from transcripts
 - After pulling: pnpm install, pnpm db:deploy, **pnpm db:seed** (new permissions knowledge.manage / approve_commercial, memory.read / manage), rebuild (pnpm build). New .env placeholders: EMBEDDINGS_PROVIDER, EMBEDDINGS_API_KEY, EMBEDDINGS_MODEL (empty = keyword search only, still safe)
 - Note: the full pnpm test was not re-run; the suites above pass on their own. Detail pages ([id] routes) could not be screenshot live because the long-running web dev server's worker had crashed (an untouched Phase 11 page fails the same way) — restart `pnpm dev:web` to view them
+
+## Phase 16 — Definition of Done
+DoD: "A signal is evidence of change, not intent: multiple sources about one event → one signal + many evidence; the system explains why contact now as an evidence-backed hypothesis, and a signal alone never authorises outreach."
+- [x] Schema: Signal (fact vs interpretation, explainable relevance, why-now, recommended action, status DETECTED → VALIDATED → ACTIONABLE / MONITOR → ACTED_ON / DISMISSED / EXPIRED, expiry + action window, feedback), SignalEvidence (one signal, many sources), SignalWatchlist + members (priority → re-check cadence), SignalRule, SignalObservation (raw comparisons for the funnel); EntityType SIGNAL*, ResearchTrigger MONITOR, AgentType SIGNAL
+- [x] Rules (`@revenue-os/shared/signals`): taxonomy (growth, digital, people, relationship, conversation, negative), lifetimes/decay, relevance components (freshness, source reliability, ICP, commercial relevance vs approved services, relationship), why-now (null = no signal-based outreach), relationship-aware action (open deal → attach, conversation/customer → owner, lost/dormant → re-engage, cold → research first), website change classification (copyright/wording = low, new service/booking/commercial CTA/redesign = signal), rules matching
+- [x] Engine (`packages/signals`): detectors for research reruns (website diff, down/back, launched), conversations (pricing, meeting, timeline, current-solution issue, stakeholder, dormant re-engaged), due "contact me later" promises, lost-deal revisit dates, market rescans ("new to our dataset"), people changes, expansion clusters; dedupe/merge; rules (record, research, priority, campaign candidate for cold only, notify, ignore); Signal Agent (hedged interpretation, may propose a CANDIDATE hypothesis, never a fact); 10-minute sweep (expire, missed windows, lost-deal revisits, dynamic watchlists, monitoring research batch); campaign audience can target signal types / candidates (all campaign checks + policy still apply)
+- [x] API /signals: overview, list, natural-language search, analytics, company signals + check now, act / dismiss / re-analyze, watchlists, rules. Permissions signal.read / signal.manage / signal.configure
+- [x] Screens: Signals (Today funnel + priority queue + sources, All signals with filters and search, Markets "living market", Watchlists, Rules, Analytics), signal detail (fact vs interpretation, previous vs current, relevance components, evidence provenance, actions with existing-relationship protection), Company 360 Signals tab + real Intent box, deal page Signals card
+- [x] Tests: shared signal rules (12), signals package (9), API integration phase16 (6: one signal + merged evidence, copyright-only = no signal, open deal → attach & cold campaign refused, why-now only with an approved service, contact-later due with window, rules ignore/priority, sweep expiry + missed window, dismissal feedback, no external action ever); phase13 + phase15 still pass; full typecheck clean
+- [x] Live run (dev): default watchlists + rules seeded; overview, rules, watchlists, search ("strong new service signals in Austin this week" → filters), watchlist create + add, analytics; "Check now" → monitoring research → signal detection (unchanged test site → observation, no signal; our own due promise correctly not a contact-later signal); signal pages served without errors
+- Deferred by plan: hiring / job-board and news sources (no provider yet — shown as not connected), review/social activity signals, signal analytics by revenue (Phase 17 attribution), AI Sales Manager digest (Phase 19), notifications (Phase 21)
+- After pulling: pnpm install, pnpm db:deploy, **pnpm db:seed** (new permissions signal.read / manage / configure, default watchlists + rules), rebuild. No new env vars
+- Note: the full pnpm test was not re-run; the suites above pass on their own. Pages were checked for a clean server render, not visually in a browser
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

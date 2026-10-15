@@ -214,6 +214,9 @@ importers:
       '@revenue-os/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@revenue-os/signals':
+        specifier: workspace:*
+        version: link:../../packages/signals
       bullmq:
         specifier: ^6.3.11
         version: 6.3.11(ioredis@6.0.0)(pg@8.23.1)
@@ -321,6 +324,9 @@ importers:
       '@revenue-os/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@revenue-os/signals':
+        specifier: workspace:*
+        version: link:../../packages/signals
       bullmq:
         specifier: ^6.3.11
         version: 6.3.11(ioredis@6.0.0)(pg@8.23.1)
@@ -565,6 +571,40 @@ importers:
       pino-pretty:
         specifier: ^13.1.3
         version: 13.1.3
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.19.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/signals:
+    dependencies:
+      '@revenue-os/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@revenue-os/database':
+        specifier: workspace:*
+        version: link:../database
+      '@revenue-os/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@revenue-os/events':
+        specifier: workspace:*
+        version: link:../events
+      '@revenue-os/knowledge':
+        specifier: workspace:*
+        version: link:../knowledge
+      '@revenue-os/outreach':
+        specifier: workspace:*
+        version: link:../outreach
+      '@revenue-os/providers':
+        specifier: workspace:*
+        version: link:../providers
+      '@revenue-os/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^24

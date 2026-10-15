@@ -63,6 +63,12 @@ export const JOBS = {
   knowledgeDocumentProcess: 'knowledge.document.process',
   /** Periodic: scheduled knowledge goes live, overdue reviews turn STALE, memories expire or need re-checking, promises fall due. */
   brainSweep: 'brain.sweep',
+  /** Detect signals for one company from one source event (research diff, classified message, due promise, lost deal, discovery, CRM). Payload: SignalDetectJobData. */
+  signalDetect: 'signal.detect',
+  /** Periodic: expire old signals, flag missed windows, open lost-deal revisits, keep dynamic watchlists in sync, queue monitoring research for due companies. */
+  signalSweep: 'signal.sweep',
+  /** The Signal Agent interprets one signal (hedged, evidence-backed). Payload: SignalAnalyzeJobData. */
+  signalAnalyze: 'signal.analyze',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -115,7 +121,7 @@ export interface ResearchRunJobData extends JobTracing {
   companyId: string;
   /** Set when a person asked (the run already exists, QUEUED). Discovery jobs create their run if one is due. */
   runId?: string;
-  trigger: 'DISCOVERY' | 'MANUAL';
+  trigger: 'DISCOVERY' | 'MANUAL' | 'MONITOR';
   missionId?: string;
   schemaVersion: 1;
 }
@@ -139,5 +145,23 @@ export interface AiCompanyJobData extends JobTracing {
   companyId: string;
   /** What this pass is about (a research run, a person's request); an agent never runs twice on the same key. */
   inputKey: string;
+  schemaVersion: 1;
+}
+
+export type SignalDetectSource = 'RESEARCH' | 'CONVERSATION' | 'COMMITMENT' | 'PIPELINE' | 'DISCOVERY' | 'CRM';
+
+export interface SignalDetectJobData extends JobTracing {
+  workspaceId: string;
+  /** Known for most sources; a conversation event carries only the message id (refId) — the job resolves it. */
+  companyId?: string;
+  source: SignalDetectSource;
+  /** The record that triggered detection (research run, conversation, commitment, opportunity, mission, employment). */
+  refId: string;
+  schemaVersion: 1;
+}
+
+export interface SignalAnalyzeJobData extends JobTracing {
+  workspaceId: string;
+  signalId: string;
   schemaVersion: 1;
 }

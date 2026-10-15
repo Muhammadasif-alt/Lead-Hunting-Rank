@@ -159,6 +159,19 @@ export interface EventPayloads {
   CommitmentCancelled: { commitmentId: string; companyId: string };
   RelationshipCreated: { relationshipId: string; companyId: string; type: string; status: string };
   RelationshipUpdated: { relationshipId: string; status: string };
+  // signals (docs/17 §106-110) — ids and labels only; a signal never authorises outreach by itself
+  SignalDetected: { signalId: string; companyId: string; type: string; strength: string; status: string; sourceKind: string };
+  /** Another source reported the same event: one signal, more evidence (screen #9 §15). */
+  SignalEvidenceAdded: { signalId: string; companyId: string; evidenceId: string; sourceCount: number };
+  SignalInterpreted: { signalId: string; source: 'RULE' | 'AI'; hypothesisId: string | null; whyNow: boolean };
+  SignalStatusChanged: { signalId: string; from: string; to: string; reason: string | null };
+  SignalActedOn: { signalId: string; companyId: string; action: string };
+  SignalDismissed: { signalId: string; feedback: string };
+  SignalExpired: { signalId: string; type: string };
+  SignalWindowMissed: { signalId: string; companyId: string; type: string };
+  SignalRuleMatched: { signalId: string; ruleId: string; actions: string[] };
+  SignalRuleChanged: { ruleId: string; change: 'CREATED' | 'UPDATED' | 'DELETED' };
+  WatchlistChanged: { watchlistId: string; change: 'CREATED' | 'UPDATED' | 'ARCHIVED' | 'MEMBERS_ADDED' | 'MEMBERS_REMOVED'; count: number };
   // knowledge (docs/13 §100-113)
   KnowledgeDraftCreated: { itemId: string; revisionId: string; type: string; version: number; origin: string };
   KnowledgeReviewRequested: { itemId: string; revisionId: string; version: number };
@@ -250,7 +263,10 @@ export type AggregateType =
   | 'RELATIONSHIP'
   | 'KNOWLEDGE_ITEM'
   | 'KNOWLEDGE_SOURCE'
-  | 'KNOWLEDGE_GAP';
+  | 'KNOWLEDGE_GAP'
+  | 'SIGNAL'
+  | 'SIGNAL_WATCHLIST'
+  | 'SIGNAL_RULE';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -277,7 +293,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales' | 'meetings' | 'memory' | 'knowledge';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales' | 'meetings' | 'memory' | 'knowledge' | 'signals';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -357,6 +373,24 @@ const processKnowledgeSource: EventRoute = {
   toJobData: (e) => ({ sourceId: e.aggregateId, schemaVersion: 1 }),
 };
 
+/** Signal detection from one source event; the job reloads current state and is idempotent (dedupe key per event). */
+const detectSignals = (consumer: string, source: string, toRef: (e: DispatchedEvent) => { companyId?: unknown; refId: unknown }): EventRoute => ({
+  consumer: `signals.detect-${consumer}`,
+  queue: QUEUES.ai,
+  job: JOBS.signalDetect,
+  priority: PRIORITY.BACKGROUND,
+  toJobData: (e) => ({ ...toRef(e), source, schemaVersion: 1 }),
+});
+
+/** The Signal Agent interprets a new signal (hedged, evidence-backed) — a proposal, never an action. */
+const analyzeSignal: EventRoute = {
+  consumer: 'signals.analyze',
+  queue: QUEUES.ai,
+  job: JOBS.signalAnalyze,
+  priority: PRIORITY.BACKGROUND,
+  toJobData: (e) => ({ signalId: e.aggregateId, schemaVersion: 1 }),
+};
+
 const entity = (owner: EventDefinition['owner'], aggregateType: AggregateType, description: string, pii: 'none' | 'low' = 'none'): EventDefinition => ({
   version: 1,
   owner,
@@ -373,12 +407,12 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   CompanyCreated: entity('crm', 'COMPANY', 'A canonical company record was created', 'low'),
   CompanyUpdated: entity('crm', 'COMPANY', 'Company fields changed (names of the fields, not values)'),
   PersonCreated: entity('crm', 'PERSON', 'A person record was created'),
-  EmploymentAttached: entity('crm', 'EMPLOYMENT', 'A person was linked to a company'),
+  EmploymentAttached: { ...entity('crm', 'EMPLOYMENT', 'A person was linked to a company'), routes: [detectSignals('employment-attached', 'CRM', (e) => ({ companyId: e.payload.companyId, refId: e.aggregateId }))] },
   ContactPointAdded: entity('crm', 'CONTACT_POINT', 'An email/phone/… was added to a person or company'),
   CompanyArchived: entity('crm', 'COMPANY', 'A company was archived (kept for history, hidden from lists)'),
   CompanyRestored: entity('crm', 'COMPANY', 'An archived company was restored'),
   PersonUpdated: entity('crm', 'PERSON', 'Person fields changed (names of the fields, not values)'),
-  EmploymentEnded: entity('crm', 'EMPLOYMENT', 'A person no longer works at a company (history kept)'),
+  EmploymentEnded: { ...entity('crm', 'EMPLOYMENT', 'A person no longer works at a company (history kept)'), routes: [detectSignals('employment-ended', 'CRM', (e) => ({ companyId: e.payload.companyId, refId: e.aggregateId }))] },
   ContactPointUpdated: entity('crm', 'CONTACT_POINT', 'A contact point changed (e.g. became primary)'),
   ContactPointArchived: entity('crm', 'CONTACT_POINT', 'A contact point was removed from use (kept for history)'),
   DuplicateCandidateDetected: entity('crm', 'ENTITY_MATCH_CANDIDATE', 'Two records may be the same business — review needed'),
@@ -396,14 +430,20 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   DiscoveryMissionBlocked: entity('discovery', 'DISCOVERY_MISSION', 'A mission cannot continue until something changes (e.g. no lead source)'),
   DiscoveryMissionCompleted: entity('discovery', 'DISCOVERY_MISSION', 'A mission finished by its stopping criteria (not a claim of 100% coverage)'),
   DiscoveryMissionFailed: entity('discovery', 'DISCOVERY_MISSION', 'A mission failed unrecoverably'),
-  CompanyDiscovered: { ...entity('discovery', 'COMPANY', 'A discovery mission found a business (new or already known)'), routes: [researchCompany] },
+  CompanyDiscovered: {
+    ...entity('discovery', 'COMPANY', 'A discovery mission found a business (new or already known)'),
+    routes: [researchCompany, detectSignals('discovered', 'DISCOVERY', (e) => ({ companyId: e.payload.companyId, refId: e.payload.missionId }))],
+  },
   ResearchRequested: {
     ...entity('research', 'RESEARCH_RUN', 'A person asked for a company to be researched'),
     // A person is waiting for it: ahead of background research from discovery.
     routes: [{ ...researchCompany, consumer: 'research.run-requested', priority: PRIORITY.NORMAL, toJobData: (e) => ({ runId: e.aggregateId, companyId: e.payload.companyId, trigger: 'MANUAL', schemaVersion: 1 }) }],
   },
   ResearchRunStarted: entity('research', 'RESEARCH_RUN', 'Research of a company started'),
-  ResearchRunCompleted: { ...entity('research', 'RESEARCH_RUN', 'Research finished (COMPLETED, or PARTIAL with named gaps)'), routes: [companyIntelligence] },
+  ResearchRunCompleted: {
+    ...entity('research', 'RESEARCH_RUN', 'Research finished (COMPLETED, or PARTIAL with named gaps)'),
+    routes: [companyIntelligence, detectSignals('research', 'RESEARCH', (e) => ({ companyId: e.payload.companyId, refId: e.aggregateId }))],
+  },
   ResearchRunFailed: entity('research', 'RESEARCH_RUN', 'Research of a company failed unrecoverably'),
   WebsiteAudited: entity('research', 'WEBSITE', 'Deterministic website checks were recorded'),
   OpportunityHypothesisProposed: entity('research', 'OPPORTUNITY_HYPOTHESIS', 'A possible need was proposed from observed facts (not verified)'),
@@ -438,7 +478,10 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
     ...entity('conversations', 'CONVERSATION', 'An inbound message joined a conversation'),
     routes: [processConversationMessage],
   },
-  ConversationMessageClassified: entity('conversations', 'CONVERSATION', 'The message was read: intents, questions, objections, stated facts'),
+  ConversationMessageClassified: {
+    ...entity('conversations', 'CONVERSATION', 'The message was read: intents, questions, objections, stated facts'),
+    routes: [detectSignals('conversation', 'CONVERSATION', (e) => ({ refId: e.payload.messageId }))],
+  },
   ConversationEscalated: entity('conversations', 'CONVERSATION', 'A person must act on this conversation'),
   ConversationReplyDrafted: entity('conversations', 'CONVERSATION', 'A reply was drafted (by the AI or a person)'),
   ConversationReplySent: entity('conversations', 'CONVERSATION', 'A reply was sent through its external action'),
@@ -454,7 +497,7 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   OpportunityUpdated: entity('sales', 'OPPORTUNITY', 'Deal fields changed (field names, not values)'),
   OpportunityStageChanged: entity('sales', 'OPPORTUNITY', 'The deal moved stage through the change-stage command'),
   OpportunityWon: entity('sales', 'OPPORTUNITY', 'The deal was won — the company became a customer and prospecting stopped'),
-  OpportunityLost: entity('sales', 'OPPORTUNITY', 'The deal was lost with a reason (maybe a revisit date)'),
+  OpportunityLost: { ...entity('sales', 'OPPORTUNITY', 'The deal was lost with a reason (maybe a revisit date)'), routes: [detectSignals('lost-deal', 'PIPELINE', (e) => ({ companyId: e.payload.companyId, refId: e.aggregateId }))] },
   OpportunityReopened: entity('sales', 'OPPORTUNITY', 'A won or lost deal was reopened with a reason'),
   OpportunityStakeholderAdded: entity('sales', 'OPPORTUNITY', 'Someone involved in the decision was added or suggested'),
   QualificationUpdated: entity('sales', 'OPPORTUNITY', 'Known / unknown qualification changed'),
@@ -481,12 +524,23 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   MemoryConflictDetected: entity('memory', 'MEMORY', 'Two memories disagree — kept visible until resolved'),
   MemoryConflictResolved: entity('memory', 'MEMORY', 'A memory conflict was resolved (newer wins, keep one, or both valid)'),
   CommitmentCreated: entity('memory', 'COMMITMENT', 'A promise was recorded (ours or theirs) with its due date'),
-  CommitmentDue: entity('memory', 'COMMITMENT', 'A promise reached its due date'),
+  CommitmentDue: { ...entity('memory', 'COMMITMENT', 'A promise reached its due date'), routes: [detectSignals('commitment-due', 'COMMITMENT', (e) => ({ companyId: e.payload.companyId, refId: e.aggregateId }))] },
   CommitmentCompleted: entity('memory', 'COMMITMENT', 'A promise was kept, with evidence'),
   CommitmentBroken: entity('memory', 'COMMITMENT', 'A promise was not kept'),
   CommitmentCancelled: entity('memory', 'COMMITMENT', 'A promise no longer applies'),
   RelationshipCreated: entity('memory', 'RELATIONSHIP', 'A relationship edge was suggested or recorded (e.g. a referral)'),
   RelationshipUpdated: entity('memory', 'RELATIONSHIP', 'A relationship was confirmed, ended or marked wrong'),
+  SignalDetected: { ...entity('signals', 'SIGNAL', 'A meaningful change about a company was detected (evidence of change, not intent)'), routes: [analyzeSignal] },
+  SignalEvidenceAdded: entity('signals', 'SIGNAL', 'Another source reported the same event — merged into the existing signal'),
+  SignalInterpreted: entity('signals', 'SIGNAL', 'A hedged interpretation and "why now" were recorded (rule or Signal Agent)'),
+  SignalStatusChanged: entity('signals', 'SIGNAL', 'A signal moved between detected / validated / actionable / monitor'),
+  SignalActedOn: entity('signals', 'SIGNAL', 'Someone acted on a signal (research, attach to deal, re-engage, campaign candidate)'),
+  SignalDismissed: entity('signals', 'SIGNAL', 'A person marked a signal not relevant, with a reason'),
+  SignalExpired: entity('signals', 'SIGNAL', 'A signal is too old to drive a "why now"'),
+  SignalWindowMissed: entity('signals', 'SIGNAL', 'The action window of a time-boxed signal passed without action'),
+  SignalRuleMatched: entity('signals', 'SIGNAL', 'A signal rule matched and its (non-sending) actions were applied'),
+  SignalRuleChanged: entity('signals', 'SIGNAL_RULE', 'A signal rule was created, changed or deleted'),
+  WatchlistChanged: entity('signals', 'SIGNAL_WATCHLIST', 'A watchlist or its members changed'),
   KnowledgeDraftCreated: entity('knowledge', 'KNOWLEDGE_ITEM', 'A knowledge draft was created (person, document, human answer, rollback) — not used by AI'),
   KnowledgeReviewRequested: entity('knowledge', 'KNOWLEDGE_ITEM', 'A draft was submitted for approval'),
   KnowledgeApproved: entity('knowledge', 'KNOWLEDGE_ITEM', 'A person approved a revision (live now or at its effective date)'),

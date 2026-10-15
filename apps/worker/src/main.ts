@@ -32,6 +32,7 @@ import {
   withMeetingGuard,
 } from '@revenue-os/outreach';
 import { createPolicyRevalidator, policySweep } from '@revenue-os/policy';
+import { analyzeSignal, detectSignals, signalSweep } from '@revenue-os/signals';
 import { CALENDAR_ACTIONS, createCalendarExecutor, createEmailSendExecutor, EMAIL_REPLY_ACTION, EMAIL_SEND_ACTION } from '@revenue-os/providers';
 import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
 import {
@@ -46,6 +47,8 @@ import {
   type ConversationJobData,
   type DiscoveryAdvanceJobData,
   type ResearchRunJobData,
+  type SignalAnalyzeJobData,
+  type SignalDetectJobData,
 } from '@revenue-os/shared';
 import { createLogger } from '@revenue-os/shared/server';
 import { Redis } from 'ioredis';
@@ -168,6 +171,24 @@ const brainSweep: JobHandler = {
   handle: async () => ({ knowledge: await knowledgeSweep(brain), memory: await memorySweep(brain) }),
 };
 
+// Signals (Phase 16): detection from one source event (research rerun diff, classified reply, due promise, lost deal,
+// market rescan, people change) — idempotent per evidence; the Signal Agent's hedged interpretation; and the sweep that
+// expires signals, flags missed windows, opens lost-deal revisits, syncs watchlists and queues monitoring research.
+// None of it sends anything.
+const signals = { db, providers: providers.gateway };
+const signalDetect: JobHandler = {
+  timeoutMs: 2 * 60_000,
+  handle: async (data) => detectSignals(signals, data as unknown as SignalDetectJobData),
+};
+const signalAnalyze: JobHandler = {
+  timeoutMs: 2 * 60_000,
+  handle: async (data) => analyzeSignal(signals, data as unknown as SignalAnalyzeJobData),
+};
+const signalSweepJob: JobHandler = {
+  timeoutMs: 3 * 60_000,
+  handle: async () => signalSweep(signals),
+};
+
 const providerHealthCheck: JobHandler = {
   timeoutMs: 120_000,
   handle: async () => ({ checked: await checkAllIntegrations(db, providers) }),
@@ -252,6 +273,7 @@ const workers = [
       [JOBS.conversationSweep]: conversationSweep,
       [JOBS.meetingSweep]: meetingSweepJob,
       [JOBS.brainSweep]: brainSweep,
+      [JOBS.signalSweep]: signalSweepJob,
     },
   }),
   createQueueWorker({
@@ -288,6 +310,8 @@ const workers = [
       [JOBS.conversationProcess]: conversationProcess,
       [JOBS.knowledgeEmbed]: knowledgeEmbed,
       [JOBS.knowledgeDocumentProcess]: knowledgeDocument,
+      [JOBS.signalDetect]: signalDetect,
+      [JOBS.signalAnalyze]: signalAnalyze,
     },
   }),
   createQueueWorker({
@@ -378,6 +402,10 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('brain-sweep', { every: 5 * 60_000 }, { name: JOBS.brainSweep, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register brain sweep schedule'));
+producer
+  .queue(QUEUES.maintenance)
+  .upsertJobScheduler('signal-sweep', { every: 10 * 60_000 }, { name: JOBS.signalSweep, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register signal sweep schedule'));
 producer
   .queue(QUEUES.inbound)
   .upsertJobScheduler('mailbox-sync', { every: 2 * 60_000 }, { name: JOBS.mailboxSync, data: { correlationId: 'scheduler' } })

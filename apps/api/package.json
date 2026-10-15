@@ -24,6 +24,7 @@
     "@revenue-os/policy": "workspace:*",
     "@revenue-os/providers": "workspace:*",
     "@revenue-os/shared": "workspace:*",
+    "@revenue-os/signals": "workspace:*",
     "bullmq": "^6.3.11",
     "country-state-city": "3.2.1",
     "ioredis": "^6.0.0",

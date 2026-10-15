@@ -16,6 +16,8 @@ const Audience = z.strictObject({
   industries: z.array(z.string().trim().min(1).max(80)).max(10).optional(),
   opportunityKeys: z.array(z.string().trim().min(1).max(80)).max(20).optional(),
   priorities: z.array(z.enum(['HIGH', 'MEDIUM', 'LOW'])).max(3).optional(),
+  signalTypes: z.array(z.string().trim().min(1).max(60)).max(20).optional(),
+  signalCandidatesOnly: z.boolean().optional(),
 });
 const Strategy = z.strictObject({
   cta: z.string().trim().max(200).optional(),

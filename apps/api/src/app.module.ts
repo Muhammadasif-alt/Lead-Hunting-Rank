@@ -16,9 +16,10 @@ import { ConversationsModule } from './modules/conversations/conversations.modul
 import { OpportunitiesModule } from './modules/opportunities/opportunities.module.js';
 import { MeetingsModule } from './modules/meetings/meetings.module.js';
 import { KnowledgeModule } from './modules/knowledge/knowledge.module.js';
+import { SignalsModule } from './modules/signals/signals.module.js';
 
 // Business modules (CompanyModule, MarketModule, â€¦) are added here phase by phase â€” see docs/04-tech-spec-1-architecture.md Â§11.
 @Module({
-  imports: [InfraModule, CommonModule, HealthModule, DomainModule, AuthModule, SystemModule, IntegrationsModule, CrmModule, DiscoveryModule, GeoModule, AiModule, PolicyModule, CampaignsModule, ConversationsModule, OpportunitiesModule, MeetingsModule, KnowledgeModule],
+  imports: [InfraModule, CommonModule, HealthModule, DomainModule, AuthModule, SystemModule, IntegrationsModule, CrmModule, DiscoveryModule, GeoModule, AiModule, PolicyModule, CampaignsModule, ConversationsModule, OpportunitiesModule, MeetingsModule, KnowledgeModule, SignalsModule],
 })
 export class AppModule {}

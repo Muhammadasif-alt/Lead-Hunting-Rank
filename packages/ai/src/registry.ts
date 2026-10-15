@@ -131,6 +131,17 @@ export const AGENTS: Record<AgentType, AgentDefaults> = {
     label: 'Scheduling Agent',
     purpose: 'Finds genuinely free times in the calendar, recognises the slot a prospect picked and asks to book it — rule-based, no model; the Policy Engine decides whether it is booked',
   },
+  SIGNAL: {
+    version: 1,
+    modelClass: 'FAST',
+    allowedTools: ['readCompanyContext', 'proposeHypothesis'],
+    dailyRunLimit: 2000,
+    dailyCostLimitMinor: null,
+    timeoutMs: 60_000,
+    riskClass: 'LOW',
+    label: 'Signal Agent',
+    purpose: 'Interprets a detected change (hedged, cited) and may suggest an opportunity hypothesis — a signal never authorises outreach',
+  },
 };
 
 export const AGENT_ORDER: AgentType[] = ['RESEARCH', 'WEB_AUDIT', 'CONTACT', 'SCORING'];

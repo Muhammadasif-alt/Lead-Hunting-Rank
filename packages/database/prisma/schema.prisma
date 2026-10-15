@@ -74,6 +74,9 @@ enum EntityType {
   KNOWLEDGE_ITEM
   KNOWLEDGE_SOURCE
   KNOWLEDGE_GAP
+  SIGNAL
+  SIGNAL_WATCHLIST
+  SIGNAL_RULE
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -194,6 +197,12 @@ model Workspace {
   knowledgeGaps          KnowledgeGap[]
   knowledgeUsage         KnowledgeUsage[]
   knowledgeFeedback      KnowledgeFeedback[]
+  signals                Signal[]
+  signalEvidence         SignalEvidence[]
+  signalWatchlists       SignalWatchlist[]
+  signalWatchlistMembers SignalWatchlistMember[]
+  signalRules            SignalRule[]
+  signalObservations     SignalObservation[]
 }
 
 enum UserStatus {
@@ -459,6 +468,9 @@ model Company {
   hypotheses   OpportunityHypothesis[]
   researchRuns ResearchRun[]
   assessments  CompanyAssessment[]
+  signals      Signal[]
+  watchlists   SignalWatchlistMember[]
+  observations SignalObservation[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, normalizedName])
@@ -748,6 +760,7 @@ model Evidence {
   workspace  Workspace            @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   facts      FactEvidence[]
   hypotheses HypothesisEvidence[]
+  signals    SignalEvidence[]
 
   @@unique([workspaceId, id])
   @@index([workspaceId, entityType, entityId])
@@ -1524,6 +1537,8 @@ model CoverageAssessment {
 enum ResearchTrigger {
   DISCOVERY
   MANUAL
+  /// Scheduled re-check of a watched company or saved market (Phase 16) — change detection, not first research.
+  MONITOR
 }
 
 /// docs/09 §83-87 agent-task shape: PARTIAL keeps what was found and names the gaps; WAITING = a provider said "not now".
@@ -1797,6 +1812,7 @@ enum AgentType {
   INBOX
   CONVERSATION
   SCHEDULING
+  SIGNAL
 }
 
 /**
@@ -3806,4 +3822,237 @@ model KnowledgeFeedback {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
 
   @@index([workspaceId, itemId])
+}
+
+// ───────────────────────────── Signals + Intent (Phase 16) ─────────────────────────────
+
+/// docs/09 §67-76. DETECTED = a possible change from a source we do not fully trust yet; VALIDATED = credible change
+/// (not intent); ACTIONABLE = relevant to a current business objective — still not "definitely buying"; MONITOR = real
+/// but not worth acting on now; EXPIRED = no longer drives a "why now".
+enum SignalStatus {
+  CANDIDATE
+  DETECTED
+  VALIDATED
+  ACTIONABLE
+  MONITOR
+  DISMISSED
+  EXPIRED
+  ACTED_ON
+}
+
+enum SignalStrength {
+  STRONG
+  MEDIUM
+  WEAK
+}
+
+enum WatchlistPriority {
+  HIGH
+  NORMAL
+  LOW
+}
+
+/**
+ * One meaningful change about a company (screen #9, docs/04 §44, docs/06 §31-40): the observed FACT kept apart from the
+ * interpretation. Several sources reporting the same event share one signal (dedupeKey) with many evidence rows. A
+ * signal is evidence of change, never of purchase intent: it authorises no outreach by itself.
+ */
+model Signal {
+  id                   String            @id @default(uuid()) @db.Uuid
+  workspaceId          String            @db.Uuid
+  companyId            String            @db.Uuid
+  personId             String?           @db.Uuid
+  /// Taxonomy key from @revenue-os/shared SIGNAL_TYPES (NEW_SERVICE, WEBSITE_CHANGE, CONTACT_LATER_DUE…).
+  type                 String
+  /// GROWTH / DIGITAL / COMMERCIAL / PEOPLE / MARKETING / RELATIONSHIP / CONVERSATION / NEGATIVE
+  category             String
+  /// What the event is about (a service name, "home page", a person) — the dedupe subject.
+  subject              String
+  title                String
+  /// What was observed, in plain words, with its source — a fact, not an interpretation.
+  fact                 String
+  /// company:type:subject:date — the same event from more sources merges into this row instead of a new one.
+  dedupeKey            String
+  status               SignalStatus      @default(DETECTED)
+  statusReason         String?
+  strength             SignalStrength
+  /// Explainable components (screen #9 §13): { freshness, sourceReliability, icpRelevance, commercialRelevance, relationshipContext, score, reasons[] }.
+  relevance            Json
+  confidence           ConfidenceLevel
+  /// Evidence comparison (screen #9 §5): { label, previous, current } — exactly why the signal was created.
+  change               Json?
+  /// WEBSITE / CONVERSATION / COMMITMENT / PIPELINE / CRM / DISCOVERY / HUMAN
+  sourceKind           String
+  /// COLD / IN_CONVERSATION / OPEN_DEAL / CUSTOMER / FORMER_CUSTOMER / LOST_DEAL / DORMANT — at detection (screen #9 §26-27).
+  relationship         String
+  /// Hedged interpretation ("may be expanding…") — AI or rule; never shown as fact.
+  interpretation       String?
+  interpretationSource HypothesisSource?
+  /// Evidence-backed reason to contact now (screen #9 §18). Null = no signal-based outreach; the company stays in the normal pool.
+  whyNow               String?
+  hypothesisId         String?           @db.Uuid
+  opportunityId        String?           @db.Uuid
+  conversationId       String?           @db.Uuid
+  commitmentId         String?           @db.Uuid
+  marketId             String?           @db.Uuid
+  /// RESEARCH / NOTIFY_OWNER / ATTACH_TO_DEAL / RE_ENGAGE / CAMPAIGN_CANDIDATE / RECHECK / RECORD
+  recommendedAction    String
+  /// Rule actions applied automatically on detection (RESEARCH, PRIORITY, CAMPAIGN_CANDIDATE, NOTIFY_OWNER).
+  autoActions          String[]
+  ruleIds              String[]          @db.Uuid
+  /// A candidate for signal-based campaigns (person or rule). Enrollment still passes every campaign check and the Policy Engine.
+  campaignCandidate    Boolean           @default(false)
+  priority             Boolean           @default(false)
+  evidenceCount        Int               @default(0)
+  sourceCount          Int               @default(0)
+  detectedAt           DateTime          @db.Timestamptz(3)
+  /// When the change happened, if known (a follow-up date, a lost deal's revisit date); else = detectedAt.
+  effectiveAt          DateTime          @db.Timestamptz(3)
+  lastSeenAt           DateTime          @db.Timestamptz(3)
+  expiresAt            DateTime          @db.Timestamptz(3)
+  /// Action window for time-boxed signals ("reach back out Oct 1–7", screen #9 §35).
+  windowEndsAt         DateTime?         @db.Timestamptz(3)
+  actedAction          String?
+  actedAt              DateTime?         @db.Timestamptz(3)
+  actedById            String?           @db.Uuid
+  /// WRONG_COMPANY / WRONG_SIGNAL / NOT_RELEVANT / OLD_INFORMATION / WRONG_INTERPRETATION / DUPLICATE (screen #9 §40)
+  feedback             String?
+  feedbackNote         String?
+  dismissedById        String?           @db.Uuid
+  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
+  version              Int               @default(1)
+
+  workspace Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company          @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+  evidence  SignalEvidence[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, status, strength, detectedAt])
+  @@index([workspaceId, companyId, detectedAt])
+  @@index([workspaceId, companyId, type, subject, status])
+  @@index([workspaceId, type, detectedAt])
+  @@index([workspaceId, expiresAt])
+}
+
+/// Many sources, one signal (screen #9 §15, §32): each row is one observation with its own provenance.
+model SignalEvidence {
+  workspaceId String   @db.Uuid
+  signalId    String   @db.Uuid
+  evidenceId  String   @db.Uuid
+  /// Independent source name (official website, a conversation, a lead source) — distinct values count as sourceCount.
+  source      String
+  note        String?
+  observedAt  DateTime @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  signal    Signal    @relation(fields: [workspaceId, signalId], references: [workspaceId, id], onDelete: Cascade)
+  evidence  Evidence  @relation(fields: [workspaceId, evidenceId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@id([signalId, evidenceId])
+  @@index([workspaceId, evidenceId])
+}
+
+/**
+ * Which companies to watch how closely (screen #9 §29-31): a named list with a monitoring priority that sets the
+ * re-check cadence. MARKET lists follow a saved market; OPEN_DEALS / LOST_DEALS / CUSTOMERS are kept in sync by the
+ * sweep; MANUAL lists are a person's picks.
+ */
+model SignalWatchlist {
+  id          String            @id @default(uuid()) @db.Uuid
+  workspaceId String            @db.Uuid
+  name        String
+  description String?
+  /// MANUAL / MARKET / OPEN_DEALS / LOST_DEALS / CUSTOMERS
+  kind        String            @default("MANUAL")
+  priority    WatchlistPriority @default(NORMAL)
+  marketId    String?           @db.Uuid
+  /// { website: boolean, people: boolean, relationship: boolean } — what the sweep re-checks for members.
+  monitors    Json              @default("{}")
+  lastSweepAt DateTime?         @db.Timestamptz(3)
+  createdBy   String?           @db.Uuid
+  archivedAt  DateTime?         @db.Timestamptz(3)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+  version     Int               @default(1)
+
+  workspace Workspace               @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  members   SignalWatchlistMember[]
+
+  @@unique([workspaceId, id])
+  @@unique([workspaceId, name])
+  @@index([workspaceId, kind])
+}
+
+model SignalWatchlistMember {
+  workspaceId   String    @db.Uuid
+  watchlistId   String    @db.Uuid
+  companyId     String    @db.Uuid
+  reason        String?
+  addedBy       String?   @db.Uuid
+  addedAt       DateTime  @default(now()) @db.Timestamptz(3)
+  lastCheckedAt DateTime? @db.Timestamptz(3)
+  nextCheckAt   DateTime? @db.Timestamptz(3)
+
+  workspace Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  watchlist SignalWatchlist @relation(fields: [workspaceId, watchlistId], references: [workspaceId, id], onDelete: Cascade)
+  company   Company         @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@id([watchlistId, companyId])
+  @@index([workspaceId, companyId])
+  @@index([workspaceId, nextCheckAt])
+}
+
+/**
+ * IF a signal matches THEN … (screen #9 §22-24, §41). Actions never send anything: RECORD / RESEARCH / PRIORITY /
+ * CAMPAIGN_CANDIDATE / NOTIFY_OWNER, or IGNORE to keep noise down. Outreach still goes through campaigns and policy.
+ */
+model SignalRule {
+  id            String    @id @default(uuid()) @db.Uuid
+  workspaceId   String    @db.Uuid
+  name          String
+  enabled       Boolean   @default(true)
+  /// { types[], categories[], minStrength, icpLevels[], industries[], marketIds[], relationships[] } — all optional, AND-ed.
+  conditions    Json
+  actions       String[]
+  position      Int       @default(0)
+  matches       Int       @default(0)
+  lastMatchedAt DateTime? @db.Timestamptz(3)
+  createdBy     String?   @db.Uuid
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime  @updatedAt @db.Timestamptz(3)
+  version       Int       @default(1)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, id])
+  @@index([workspaceId, enabled, position])
+}
+
+/**
+ * One comparison the detectors made (screen #9 §36 funnel: raw observations → meaningful changes → signals). Most
+ * checks find nothing or only cosmetic change; those are counted here, not shown as signals.
+ */
+model SignalObservation {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  companyId   String   @db.Uuid
+  /// WEBSITE / CONVERSATION / COMMITMENT / PIPELINE / CRM / DISCOVERY
+  sourceKind  String
+  /// What was compared, e.g. "website:home".
+  subject     String
+  /// NONE / LOW / MEDIUM / HIGH — how meaningful the change was judged (screen #9 §6).
+  changeLevel String
+  detail      String?
+  signalId    String?  @db.Uuid
+  observedAt  DateTime @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  company   Company   @relation(fields: [workspaceId, companyId], references: [workspaceId, id], onDelete: Restrict)
+
+  @@index([workspaceId, observedAt])
+  @@index([workspaceId, companyId, observedAt])
 }

@@ -40,6 +40,9 @@ export const PERMISSIONS = {
   'knowledge.approve_commercial': { class: 'E', description: 'Publish pricing, policies and claims (commercial authority)' },
   'memory.read': { class: 'A', description: 'Read AI memory, commitments and relationships' },
   'memory.manage': { class: 'B', description: 'Confirm, correct or invalidate memories; manage commitments and relationships' },
+  'signal.read': { class: 'A', description: 'View buying signals, watchlists and signal rules' },
+  'signal.manage': { class: 'B', description: 'Act on signals (research, attach to a deal, campaign candidate, dismiss) and manage watchlists' },
+  'signal.configure': { class: 'B', description: 'Define signal rules (what happens automatically when a signal matches — never sending)' },
   'policy.read': { class: 'A', description: 'View policies' },
   'policy.manage': { class: 'E', description: 'Change policies and autonomy levels' },
   'integration.read': { class: 'A', description: 'View integrations, their health and usage' },
@@ -65,6 +68,7 @@ const READ: PermissionKey[] = [
   'opportunity.read',
   'knowledge.read',
   'memory.read',
+  'signal.read',
   'policy.read',
   'integration.read',
 ];
@@ -92,8 +96,9 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<RoleKey, PermissionKey[]> = {
     'outbound.pause',
     'knowledge.manage',
     'memory.manage',
+    'signal.manage',
   ],
-  RESEARCHER: [...READ, 'company.update', 'company.merge', 'company.research', 'evidence.manage', 'market.create', 'market.run', 'task.manage', 'memory.manage'],
+  RESEARCHER: [...READ, 'company.update', 'company.merge', 'company.research', 'evidence.manage', 'market.create', 'market.run', 'task.manage', 'memory.manage', 'signal.manage', 'signal.configure'],
   VIEWER: READ,
 };
 

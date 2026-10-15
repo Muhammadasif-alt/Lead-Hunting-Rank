@@ -12,4 +12,5 @@ export * from './agents/conversation.js';
 export * from './agents/inbox.js';
 export * from './agents/research.js';
 export * from './agents/scoring.js';
+export * from './agents/signal.js';
 export * from './agents/web-audit.js';

@@ -73,6 +73,12 @@ export type {
   PolicyDecision,
   ProviderCallRecord,
   ResearchRun,
+  Signal,
+  SignalEvidence,
+  SignalObservation,
+  SignalRule,
+  SignalWatchlist,
+  SignalWatchlistMember,
   SocialProfile,
   Suppression,
   Website,
@@ -80,7 +86,7 @@ export type {
   WebsiteSnapshot,
 } from './generated/prisma/client.js';
 export * from './generated/prisma/enums.js';
-export { DEFAULT_MEETING_TYPES, provisionMeetingTypes, provisionWorkspaceDefaults, syncPermissionCatalog } from './bootstrap.js';
+export { DEFAULT_MEETING_TYPES, provisionMeetingTypes, provisionSignalDefaults, provisionWorkspaceDefaults, syncPermissionCatalog } from './bootstrap.js';
 
 /** Creates a Prisma client. Apps own its lifecycle (connect on start, `$disconnect()` on shutdown). */
 export function createPrismaClient(databaseUrl: string): PrismaClient {

@@ -20,6 +20,7 @@
     "@revenue-os/policy": "workspace:*",
     "@revenue-os/providers": "workspace:*",
     "@revenue-os/shared": "workspace:*",
+    "@revenue-os/signals": "workspace:*",
     "bullmq": "^6.3.11",
     "ioredis": "^6.0.0"
   },

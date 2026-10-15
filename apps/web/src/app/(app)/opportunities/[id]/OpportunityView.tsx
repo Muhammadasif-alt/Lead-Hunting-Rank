@@ -25,6 +25,7 @@ import { formatAgo } from "@/lib/crm";
 import { formatMoney, HEALTH_STYLE, RISK_STYLE, TIMELINE_LABEL, type OpportunityDetail, type QualificationField } from "@/lib/opportunities";
 import { findScreen } from "@/lib/screens";
 import { useMe } from "@/lib/session-context";
+import { DealSignals } from "../../signals/parts";
 
 /** Opportunity 360 (screen #7 §5-28): why it exists, what is known (with their words), who decides, health, next action, history. */
 export function OpportunityView({ id }: { id: string }) {
@@ -210,6 +211,7 @@ export function OpportunityView({ id }: { id: string }) {
         <aside className="min-w-0 space-y-4">
           <Details d={d} canEdit={canEdit} busy={busy} onSave={(input) => void run("details", () => patch(`/opportunities/${id}`, { ...input, version: o.version }), "Saved.")} />
           <Origin d={d} />
+          {can("signal.read") && <DealSignals companyId={d.company.id} />}
           {d.losses.length > 0 && (
             <section className="card space-y-2 p-4 text-sm">
               <div className="eyebrow text-[11px]">Loss</div>

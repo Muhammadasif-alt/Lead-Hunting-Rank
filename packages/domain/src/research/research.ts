@@ -35,7 +35,7 @@ export interface ResearchJob {
   workspaceId: string;
   companyId: string;
   runId?: string;
-  trigger: 'DISCOVERY' | 'MANUAL';
+  trigger: 'DISCOVERY' | 'MANUAL' | 'MONITOR';
   missionId?: string;
 }
 
@@ -710,15 +710,18 @@ class Researcher {
   }
 }
 
-/** A person asks for research now: one QUEUED run per company; the event schedules the worker (docs/07 outbox). */
-export async function requestResearchTx(tx: Tx, ctx: ServiceContext, companyId: string): Promise<{ run: ResearchRun; created: boolean }> {
+/**
+ * A person (or signal monitoring, trigger MONITOR) asks for research now: one QUEUED run per company; the event
+ * schedules the worker (docs/07 outbox). A run with an id always runs — the freshness skip is for automatic jobs only.
+ */
+export async function requestResearchTx(tx: Tx, ctx: ServiceContext, companyId: string, trigger: 'MANUAL' | 'MONITOR' = 'MANUAL'): Promise<{ run: ResearchRun; created: boolean }> {
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`research:${companyId}`}))`;
   const active = await tx.researchRun.findFirst({ where: { workspaceId: ctx.workspaceId, companyId, status: { in: ACTIVE_RESEARCH_STATES } }, orderBy: { createdAt: 'desc' } });
   if (active) return { run: active, created: false };
   const run = await tx.researchRun.create({
-    data: { workspaceId: ctx.workspaceId, companyId, trigger: 'MANUAL', status: 'QUEUED', requestedBy: ctx.actor.type === 'HUMAN' ? ctx.actor.id : null },
+    data: { workspaceId: ctx.workspaceId, companyId, trigger, status: 'QUEUED', requestedBy: ctx.actor.type === 'HUMAN' ? ctx.actor.id : null },
   });
-  await writeAudit(tx, ctx, { action: 'research_run.requested', entityType: 'RESEARCH_RUN', entityId: run.id, after: { companyId, trigger: 'MANUAL' } });
+  await writeAudit(tx, ctx, { action: 'research_run.requested', entityType: 'RESEARCH_RUN', entityId: run.id, after: { companyId, trigger } });
   await recordEvent(tx, ctx, 'ResearchRequested', run.id, { runId: run.id, companyId });
   return { run, created: true };
 }
