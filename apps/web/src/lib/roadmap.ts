@@ -17,7 +17,7 @@ export const ROADMAP: { phase: number; name: string; done: boolean }[] = [
   { phase: 14, name: "Calendar + meetings", done: true },
   { phase: 15, name: "Memory + knowledge", done: true },
   { phase: 16, name: "Signals + intent", done: true },
-  { phase: 17, name: "Analytics + attribution", done: false },
+  { phase: 17, name: "Analytics + attribution", done: true },
   { phase: 18, name: "Experiments + learning", done: false },
   { phase: 19, name: "AI Sales Manager", done: false },
   { phase: 20, name: "Command Center", done: false },

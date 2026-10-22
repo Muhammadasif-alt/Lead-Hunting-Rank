@@ -187,6 +187,9 @@ importers:
       '@revenue-os/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@revenue-os/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@revenue-os/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -297,6 +300,9 @@ importers:
       '@revenue-os/ai':
         specifier: workspace:*
         version: link:../../packages/ai
+      '@revenue-os/analytics':
+        specifier: workspace:*
+        version: link:../../packages/analytics
       '@revenue-os/config':
         specifier: workspace:*
         version: link:../../packages/config
@@ -364,6 +370,31 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@types/node':
+        specifier: ^24
+        version: 24.19.1
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
+
+  packages/analytics:
+    dependencies:
+      '@revenue-os/ai':
+        specifier: workspace:*
+        version: link:../ai
+      '@revenue-os/database':
+        specifier: workspace:*
+        version: link:../database
+      '@revenue-os/domain':
+        specifier: workspace:*
+        version: link:../domain
+      '@revenue-os/events':
+        specifier: workspace:*
+        version: link:../events
+      '@revenue-os/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^24

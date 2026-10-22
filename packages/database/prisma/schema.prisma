@@ -77,6 +77,8 @@ enum EntityType {
   SIGNAL
   SIGNAL_WATCHLIST
   SIGNAL_RULE
+  REVENUE_EVENT
+  ANALYTICS_VIEW
 }
 
 // ───────────────────────── 01 Identity & Workspace ─────────────────────────
@@ -203,6 +205,11 @@ model Workspace {
   signalWatchlistMembers SignalWatchlistMember[]
   signalRules            SignalRule[]
   signalObservations     SignalObservation[]
+  attributionTouches     AttributionTouch[]
+  revenueEvents          RevenueEvent[]
+  dailyMetrics           DailyMetric[]
+  analyticsRuns          AnalyticsRun[]
+  analyticsViews         AnalyticsView[]
 }
 
 enum UserStatus {
@@ -4055,4 +4062,136 @@ model SignalObservation {
 
   @@index([workspaceId, observedAt])
   @@index([workspaceId, companyId, observedAt])
+}
+
+// ───────────────────────────── Analytics + Attribution (Phase 17) ─────────────────────────────
+
+/// One step of a deal's acquisition chain (docs/04 §46, docs/06 §133-146, screen #10 §3): market → source → signal →
+/// campaign → message → conversation → meeting → opportunity. Built from the operational records when a deal is
+/// created / won; re-running is idempotent. Revenue is never attributed to one salesperson alone.
+enum TouchType {
+  MARKET
+  DISCOVERY
+  SIGNAL
+  HYPOTHESIS
+  CAMPAIGN
+  MESSAGE
+  CONVERSATION
+  MEETING
+  REFERRAL
+  HUMAN
+}
+
+model AttributionTouch {
+  id            String    @id @default(uuid()) @db.Uuid
+  workspaceId   String    @db.Uuid
+  opportunityId String    @db.Uuid
+  companyId     String    @db.Uuid
+  touchType     TouchType
+  /// The record the touch points at (Market, DiscoveryMission, Signal, Campaign, CampaignMessage, Conversation, Meeting…).
+  sourceType    String
+  sourceId      String    @db.Uuid
+  /// Human label shown in the lineage ("Austin landscapers", "Campaign #17", "Discovery meeting").
+  label         String
+  /// Extra dimension values for slicing (provider, signal type, industry, persona title, variant…).
+  detail        Json      @default("{}")
+  occurredAt    DateTime  @db.Timestamptz(3)
+  /// 1 = first touch; order by occurredAt.
+  position      Int
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([opportunityId, touchType, sourceId])
+  @@index([workspaceId, touchType, sourceId])
+  @@index([workspaceId, opportunityId, position])
+}
+
+/// docs/06 §133-146: WON / PAYMENT / EXPANSION / REFUND. The won amount is recorded once per deal; refunds are negative events, never edits.
+enum RevenueEventType {
+  WON
+  PAYMENT
+  EXPANSION
+  REFUND
+}
+
+model RevenueEvent {
+  id            String           @id @default(uuid()) @db.Uuid
+  workspaceId   String           @db.Uuid
+  opportunityId String           @db.Uuid
+  companyId     String           @db.Uuid
+  type          RevenueEventType
+  /// Minor units, always positive; REFUND subtracts.
+  amountMinor   Int
+  currency      String           @db.Char(3)
+  occurredAt    DateTime         @db.Timestamptz(3)
+  note          String?
+  /// Idempotency: "won:<opportunityId>" for the automatic WON event; null for manual entries.
+  dedupeKey     String?
+  createdByType ActorType
+  createdById   String?
+  createdAt     DateTime         @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, dedupeKey])
+  @@index([workspaceId, occurredAt])
+  @@index([workspaceId, opportunityId])
+}
+
+/**
+ * Derived daily projection (docs/04 §45, docs/06 §133-146): NOT the source of truth — rebuilt from operational tables
+ * by the analytics job (idempotent upsert). dimension ALL / MARKET / CAMPAIGN / SOURCE / SIGNAL_TYPE / AGENT / PROVIDER /
+ * OWNER; dimensionId '' for ALL.
+ */
+model DailyMetric {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  day         DateTime @db.Date
+  metric      String
+  dimension   String   @default("ALL")
+  dimensionId String   @default("")
+  value       Float
+  computedAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, day, metric, dimension, dimensionId])
+  @@index([workspaceId, metric, day])
+}
+
+/// One projection / attribution pass, for data freshness (screen #10 §51): never present stale analytics as live.
+model AnalyticsRun {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  /// ROLLUP / ATTRIBUTION / BACKFILL
+  kind        String
+  status      String
+  fromDay     DateTime? @db.Date
+  toDay       DateTime? @db.Date
+  rows        Int       @default(0)
+  error       String?
+  startedAt   DateTime  @db.Timestamptz(3)
+  finishedAt  DateTime? @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, kind, startedAt])
+}
+
+/// Saved analytics views (screen #10 §53): a person's filters and tab, private unless shared.
+model AnalyticsView {
+  id          String   @id @default(uuid()) @db.Uuid
+  workspaceId String   @db.Uuid
+  userId      String   @db.Uuid
+  name        String
+  tab         String
+  filters     Json     @default("{}")
+  shared      Boolean  @default(false)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+
+  @@unique([workspaceId, userId, name])
 }

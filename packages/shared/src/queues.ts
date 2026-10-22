@@ -69,6 +69,10 @@ export const JOBS = {
   signalSweep: 'signal.sweep',
   /** The Signal Agent interprets one signal (hedged, evidence-backed). Payload: SignalAnalyzeJobData. */
   signalAnalyze: 'signal.analyze',
+  /** Build / refresh a deal's attribution touches (and the WON revenue event once). Payload: AttributionJobData. */
+  analyticsAttribute: 'analytics.attribute',
+  /** Periodic: rebuild the daily metric projection for recent days (idempotent upsert; derived, never truth). */
+  analyticsRollup: 'analytics.rollup',
 } as const;
 
 export type JobName = (typeof JOBS)[keyof typeof JOBS];
@@ -163,5 +167,11 @@ export interface SignalDetectJobData extends JobTracing {
 export interface SignalAnalyzeJobData extends JobTracing {
   workspaceId: string;
   signalId: string;
+  schemaVersion: 1;
+}
+
+export interface AttributionJobData extends JobTracing {
+  workspaceId: string;
+  opportunityId: string;
   schemaVersion: 1;
 }

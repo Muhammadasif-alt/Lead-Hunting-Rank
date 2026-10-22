@@ -24,7 +24,8 @@ Rule: vertical slices (DB → API → UI → Evidence → Event → Audit → Te
 | 14 | Calendar + Meetings | ✅ done 2026-10-09 |
 | 15 | Memory + Knowledge | ✅ done 2026-10-12 |
 | 16 | Signals + Intent | ✅ done 2026-10-15 |
-| 17 … 24 | Analytics + Attribution → … → Production + autonomy rollout | ⬜ |
+| 17 | Analytics + Attribution | ✅ done 2026-10-22 |
+| 18 … 24 | Experiments + Learning → … → Production + autonomy rollout | ⬜ |
 
 Phase numbers follow the numbered sections of docs/17 (§62-66 Phase 10 Policy Engine, §67-76 Phase 11 Campaigns, … §147-155 Phase 24). The short list in docs/17 §1 has no separate policy phase, so its later numbers are one lower.
 
@@ -252,6 +253,19 @@ DoD: "A signal is evidence of change, not intent: multiple sources about one eve
 - Deferred by plan: hiring / job-board and news sources (no provider yet — shown as not connected), review/social activity signals, signal analytics by revenue (Phase 17 attribution), AI Sales Manager digest (Phase 19), notifications (Phase 21)
 - After pulling: pnpm install, pnpm db:deploy, **pnpm db:seed** (new permissions signal.read / manage / configure, default watchlists + rules), rebuild. No new env vars
 - Note: the full pnpm test was not re-run; the suites above pass on their own. Pages were checked for a clean server render, not visually in a browser
+
+## Phase 17 — Definition of Done
+DoD: "Lifecycle attribution Source → Company → Signal → Campaign → Message → Conversation → Meeting → Opportunity → Revenue; analytics projections; revenue events; real metrics only — no fake dashboard."
+- [x] Schema: AttributionTouch (a deal's acquisition chain, one row per touch, idempotent), RevenueEvent (WON once per deal, PAYMENT / EXPANSION / REFUND, amount ≥ 0 CHECK), DailyMetric (derived projection, never truth), AnalyticsRun (freshness), AnalyticsView (saved views, private unless shared)
+- [x] Rules (`@revenue-os/shared/analytics`): metric definitions in 4 levels (outcomes first), periods + previous period, comparison with low-sample honesty and better/worse by metric direction, attribution models (full, first, last, linear), funnel with the biggest leak, anomaly baselines, data freshness states
+- [x] Engine (`packages/analytics`): attribution built when a deal is created / won (market, discovery source, signals, hypotheses, campaign, message, conversation, meeting, referral, human), revenue recording (only on won deals, refund ≤ recorded), 15-minute rollup + backfill, read models (overview, attribution, markets, campaigns, pipeline, conversations, sources + data quality, costs, AI vs human, drill-down, deterministic "Ask Revenue AI" in English + Roman Urdu, freshness, saved views). Unknown cost stays unknown, never zero
+- [x] API /analytics (overview, attribution, deal lineage, markets, campaigns, pipeline, conversations, sources, costs, ai, drill, ask, freshness, definitions, refresh, views, revenue). Permissions analytics.read / analytics.costs / revenue.record
+- [x] Screens: Analytics (Overview with outcome KPIs, insights, funnel + leak, weekly timeline; Attribution with models and deal lineage; Pipeline; Outreach; Markets & sources; Costs; AI vs human; Ask), data-status strip, saved views, drill drawer on every number, metric definitions; deal page "Acquisition path" + revenue (payment / expansion / refund)
+- [x] Tests: shared analytics (16), analytics package (17), API integration phase17 (5: ordered chain + one WON event + idempotent, unknown cost never zero, idempotent rollup + backfill, empty workspace = no invented numbers, saved views privacy); phase16 still passes; full typecheck clean
+- [x] Live run (dev): refresh → Evergreen deal attributed (market → lead source → hypotheses → campaign → message → conversation → meeting); overview with funnel leak "discovered → researched", freshness (email / calendar stale because the worker was not running — shown, not hidden), attribution by market, "Revenue kahan se aa raha hai?" answered, pipeline, drill to the deal; analytics pages and deal page served without errors
+- Deferred by plan: LLM narrative for Ask (deterministic for now), AI confidence calibration (no per-decision outcome stored yet), revenue goals / weekly review (Phase 19-20), custom reports export
+- After pulling: pnpm install, pnpm db:deploy, **pnpm db:seed** (new permissions analytics.read / analytics.costs / revenue.record), rebuild. No new env vars
+- Note: the full pnpm test was not re-run; the suites above pass on their own. Pages checked for a clean server render, not visually in a browser
 
 ## Notes / known gaps
 - `apps/web` screens abhi static placeholders hain (kuch mein dummy numbers). Roadmap §2: real data aane tak fake metrics nahi — har screen apne phase mein real banegi.

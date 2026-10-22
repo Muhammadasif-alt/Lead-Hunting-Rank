@@ -171,6 +171,10 @@ export interface EventPayloads {
   SignalWindowMissed: { signalId: string; companyId: string; type: string };
   SignalRuleMatched: { signalId: string; ruleId: string; actions: string[] };
   SignalRuleChanged: { ruleId: string; change: 'CREATED' | 'UPDATED' | 'DELETED' };
+  // analytics (docs/17 §111-113) — ids and amounts in minor units
+  RevenueRecorded: { revenueEventId: string; opportunityId: string; companyId: string; type: string; amountMinor: number; currency: string };
+  AttributionUpdated: { opportunityId: string; touches: number };
+  AnalyticsViewSaved: { viewId: string; change: 'CREATED' | 'UPDATED' | 'DELETED' };
   WatchlistChanged: { watchlistId: string; change: 'CREATED' | 'UPDATED' | 'ARCHIVED' | 'MEMBERS_ADDED' | 'MEMBERS_REMOVED'; count: number };
   // knowledge (docs/13 §100-113)
   KnowledgeDraftCreated: { itemId: string; revisionId: string; type: string; version: number; origin: string };
@@ -266,7 +270,9 @@ export type AggregateType =
   | 'KNOWLEDGE_GAP'
   | 'SIGNAL'
   | 'SIGNAL_WATCHLIST'
-  | 'SIGNAL_RULE';
+  | 'SIGNAL_RULE'
+  | 'REVENUE_EVENT'
+  | 'ANALYTICS_VIEW';
 
 /** An outbox row as the dispatcher sees it, used to build consumer job payloads. */
 export interface DispatchedEvent {
@@ -293,7 +299,7 @@ export interface EventRoute {
 
 export interface EventDefinition {
   version: number;
-  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales' | 'meetings' | 'memory' | 'knowledge' | 'signals';
+  owner: 'identity' | 'crm' | 'evidence' | 'execution' | 'integrations' | 'discovery' | 'research' | 'ai' | 'policy' | 'campaigns' | 'conversations' | 'sales' | 'meetings' | 'memory' | 'knowledge' | 'signals' | 'analytics';
   aggregateType: AggregateType;
   description: string;
   pii: 'none' | 'low';
@@ -380,6 +386,15 @@ const detectSignals = (consumer: string, source: string, toRef: (e: DispatchedEv
   job: JOBS.signalDetect,
   priority: PRIORITY.BACKGROUND,
   toJobData: (e) => ({ ...toRef(e), source, schemaVersion: 1 }),
+});
+
+/** A deal's acquisition chain is (re)built from the operational records; the WON revenue event is recorded once. */
+const attributeDeal = (consumer: string): EventRoute => ({
+  consumer: `analytics.attribute-${consumer}`,
+  queue: QUEUES.analytics,
+  job: JOBS.analyticsAttribute,
+  priority: PRIORITY.BACKGROUND,
+  toJobData: (e) => ({ opportunityId: e.payload.opportunityId ?? e.aggregateId, schemaVersion: 1 }),
 });
 
 /** The Signal Agent interprets a new signal (hedged, evidence-backed) — a proposal, never an action. */
@@ -492,11 +507,11 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   ConversationAssigned: entity('conversations', 'CONVERSATION', 'The conversation was assigned to a person (or unassigned)'),
   ConversationNoteAdded: entity('conversations', 'CONVERSATION', 'An internal note was added (never sent to the prospect)'),
   ConversationContextCorrected: entity('conversations', 'CONVERSATION', 'A person rejected a fact taken from the conversation'),
-  OpportunityCreated: entity('sales', 'OPPORTUNITY', 'A deal was created from commercial evidence (or by a person)'),
+  OpportunityCreated: { ...entity('sales', 'OPPORTUNITY', 'A deal was created from commercial evidence (or by a person)'), routes: [attributeDeal('created')] },
   OpportunityProposed: entity('sales', 'CONVERSATION', 'Commercial evidence was noticed in a conversation — a person may create a deal'),
   OpportunityUpdated: entity('sales', 'OPPORTUNITY', 'Deal fields changed (field names, not values)'),
   OpportunityStageChanged: entity('sales', 'OPPORTUNITY', 'The deal moved stage through the change-stage command'),
-  OpportunityWon: entity('sales', 'OPPORTUNITY', 'The deal was won — the company became a customer and prospecting stopped'),
+  OpportunityWon: { ...entity('sales', 'OPPORTUNITY', 'The deal was won — the company became a customer and prospecting stopped'), routes: [attributeDeal('won')] },
   OpportunityLost: { ...entity('sales', 'OPPORTUNITY', 'The deal was lost with a reason (maybe a revisit date)'), routes: [detectSignals('lost-deal', 'PIPELINE', (e) => ({ companyId: e.payload.companyId, refId: e.aggregateId }))] },
   OpportunityReopened: entity('sales', 'OPPORTUNITY', 'A won or lost deal was reopened with a reason'),
   OpportunityStakeholderAdded: entity('sales', 'OPPORTUNITY', 'Someone involved in the decision was added or suggested'),
@@ -540,6 +555,9 @@ export const EVENTS: { [K in EventType]: EventDefinition } = {
   SignalWindowMissed: entity('signals', 'SIGNAL', 'The action window of a time-boxed signal passed without action'),
   SignalRuleMatched: entity('signals', 'SIGNAL', 'A signal rule matched and its (non-sending) actions were applied'),
   SignalRuleChanged: entity('signals', 'SIGNAL_RULE', 'A signal rule was created, changed or deleted'),
+  RevenueRecorded: entity('analytics', 'REVENUE_EVENT', 'Revenue was recorded (won amount, payment, expansion or refund)'),
+  AttributionUpdated: entity('analytics', 'OPPORTUNITY', 'A deal\u2019s acquisition chain (attribution touches) was built or refreshed'),
+  AnalyticsViewSaved: entity('analytics', 'ANALYTICS_VIEW', 'A saved analytics view was created, changed or deleted'),
   WatchlistChanged: entity('signals', 'SIGNAL_WATCHLIST', 'A watchlist or its members changed'),
   KnowledgeDraftCreated: entity('knowledge', 'KNOWLEDGE_ITEM', 'A knowledge draft was created (person, document, human answer, rollback) — not used by AI'),
   KnowledgeReviewRequested: entity('knowledge', 'KNOWLEDGE_ITEM', 'A draft was submitted for approval'),

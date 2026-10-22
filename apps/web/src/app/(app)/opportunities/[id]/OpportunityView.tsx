@@ -25,6 +25,7 @@ import { formatAgo } from "@/lib/crm";
 import { formatMoney, HEALTH_STYLE, RISK_STYLE, TIMELINE_LABEL, type OpportunityDetail, type QualificationField } from "@/lib/opportunities";
 import { findScreen } from "@/lib/screens";
 import { useMe } from "@/lib/session-context";
+import { DealAnalytics } from "../../analytics/deal";
 import { DealSignals } from "../../signals/parts";
 
 /** Opportunity 360 (screen #7 §5-28): why it exists, what is known (with their words), who decides, health, next action, history. */
@@ -236,6 +237,7 @@ export function OpportunityView({ id }: { id: string }) {
               <p className="text-xs text-muted">The company is a customer — cold prospecting to it stopped.</p>
             </section>
           )}
+          {can("analytics.read") && <DealAnalytics key={o.status} opportunityId={id} won={o.status === "WON"} canRecord={can("revenue.record")} />}
           <Timeline d={d} />
         </aside>
       </div>

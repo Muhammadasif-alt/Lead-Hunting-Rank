@@ -15,3 +15,4 @@ export * from './meetings.js';
 export * from './knowledge.js';
 export * from './memory.js';
 export * from './signals.js';
+export * from './analytics.js';

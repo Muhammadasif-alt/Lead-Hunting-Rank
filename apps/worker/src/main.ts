@@ -33,6 +33,7 @@ import {
 } from '@revenue-os/outreach';
 import { createPolicyRevalidator, policySweep } from '@revenue-os/policy';
 import { analyzeSignal, detectSignals, signalSweep } from '@revenue-os/signals';
+import { attributeOpportunity, rollupDailyMetrics } from '@revenue-os/analytics';
 import { CALENDAR_ACTIONS, createCalendarExecutor, createEmailSendExecutor, EMAIL_REPLY_ACTION, EMAIL_SEND_ACTION } from '@revenue-os/providers';
 import { checkAllIntegrations, createProviderRuntime } from '@revenue-os/providers/runtime';
 import {
@@ -46,6 +47,7 @@ import {
   type CampaignStepJobData,
   type ConversationJobData,
   type DiscoveryAdvanceJobData,
+  type AttributionJobData,
   type ResearchRunJobData,
   type SignalAnalyzeJobData,
   type SignalDetectJobData,
@@ -187,6 +189,22 @@ const signalAnalyze: JobHandler = {
 const signalSweepJob: JobHandler = {
   timeoutMs: 3 * 60_000,
   handle: async () => signalSweep(signals),
+};
+
+// Analytics (Phase 17): a deal's acquisition chain is rebuilt from the operational records (and the WON revenue event
+// recorded once) when it is created or won; the daily projection is rebuilt for recent days and deals without touches
+// are backfilled. Both are idempotent and derived — never the source of truth, never a side effect.
+const analytics = { db };
+const analyticsAttribute: JobHandler = {
+  timeoutMs: 60_000,
+  handle: async (data) => {
+    const job = data as unknown as AttributionJobData;
+    return attributeOpportunity(analytics, { workspaceId: job.workspaceId, opportunityId: job.opportunityId });
+  },
+};
+const analyticsRollup: JobHandler = {
+  timeoutMs: 10 * 60_000,
+  handle: async () => rollupDailyMetrics(analytics, { days: 35 }),
 };
 
 const providerHealthCheck: JobHandler = {
@@ -334,6 +352,16 @@ const workers = [
     concurrency: 1,
     handlers: { [JOBS.mailboxSync]: mailboxSync },
   }),
+  createQueueWorker({
+    queue: QUEUES.analytics,
+    prefix,
+    connection,
+    db,
+    logger,
+    metrics,
+    concurrency: 1,
+    handlers: { [JOBS.analyticsAttribute]: analyticsAttribute, [JOBS.analyticsRollup]: analyticsRollup },
+  }),
 ];
 
 // Prompt registry: record each prompt version's exact text; an edited prompt without a version bump stops the worker
@@ -406,6 +434,10 @@ producer
   .queue(QUEUES.maintenance)
   .upsertJobScheduler('signal-sweep', { every: 10 * 60_000 }, { name: JOBS.signalSweep, data: { correlationId: 'scheduler' } })
   .catch((err) => logger.warn({ error: describeError(err) }, 'could not register signal sweep schedule'));
+producer
+  .queue(QUEUES.analytics)
+  .upsertJobScheduler('analytics-rollup', { every: 15 * 60_000 }, { name: JOBS.analyticsRollup, data: { correlationId: 'scheduler' } })
+  .catch((err) => logger.warn({ error: describeError(err) }, 'could not register analytics rollup schedule'));
 producer
   .queue(QUEUES.inbound)
   .upsertJobScheduler('mailbox-sync', { every: 2 * 60_000 }, { name: JOBS.mailboxSync, data: { correlationId: 'scheduler' } })
